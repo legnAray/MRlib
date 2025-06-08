@@ -164,11 +164,6 @@ cache/
 hydra_outputs/
 multirun/
 
-# MuJoCo相关
-*.mjcf
-*.xml
-mujoco_logs/
-
 # 可视化输出
 *.mp4
 *.avi
