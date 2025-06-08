@@ -51,7 +51,7 @@ pip install -r requirements.txt
 运行以下命令进行形状匹配：
 
 ```bash
-python retarget_shape.py \
+python scripts/retarget_shape.py \
     robot=unitree_g1_29dof \
     +smpl_model_path=/path/to/your/smpl \
     +amass_path=/path/to/your/amass/data \
@@ -71,7 +71,7 @@ python retarget_shape.py \
 运行以下命令进行运动重定向：
 
 ```bash
-python retarget_motion.py \
+python scripts/retarget_motion.py \
     robot=unitree_g1_29dof \
     +smpl_model_path=/path/to/your/smpl \
     +amass_path=/path/to/your/amass/data \
@@ -84,7 +84,7 @@ python retarget_motion.py \
 使用以下命令可视化重定向后的运动：
 
 ```bash
-python play_motion.py +motion_file=output/g1_29dof/test/all_data.pkl
+python scripts/play_motion.py +motion_file=output/g1_29dof/test/all_data.pkl
 ```
 
 ## 项目结构
@@ -92,11 +92,11 @@ python play_motion.py +motion_file=output/g1_29dof/test/all_data.pkl
 ```
 MRlib/
 ├── README.md                 # 项目说明文档
-├── requirements.txt          # Python依赖列表
-├── retarget_shape.py         # 形状重定向脚本
-├── retarget_motion.py        # 运动重定向脚本
-├── play_motion.py            # 运动可视化脚本
-├── test_installation.py     # 安装测试脚本
+├── requirements.txt          # Python依赖
+├── scripts/			      # 脚本文件
+│   ├── retarget_shape.py     # 形状重定向脚本
+│   ├── retarget_motion.py    # 运动重定向脚本
+│   └── play_motion.py        # 运动可视化脚本
 ├── cfg/                      # 配置文件目录
 │   ├── config.yaml          # 主配置文件
 │   └── robot/               # 机器人配置文件
