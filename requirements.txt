@@ -1,0 +1,35 @@
+# 核心机器学习和数值计算
+torch>=1.9.0
+numpy>=1.20.0,<1.24.0  # 限制版本以兼容chumpy
+scipy>=1.7.0
+
+# SMPL/SMPLX 人体模型
+smplx[all]>=0.1.28
+chumpy>=0.70  # SMPL模型文件序列化需要
+
+# 配置管理
+hydra-core>=1.1.0
+omegaconf>=2.1.0
+pyyaml>=5.4.0
+
+# 数据处理和I/O
+joblib>=1.0.0
+tqdm>=4.60.0
+easydict>=1.9.0
+
+# XML解析
+lxml>=4.6.0
+
+# 3D处理和可视化
+open3d>=0.13.0
+numpy-stl>=2.16.0
+
+# MuJoCo物理仿真 (仅play_motion.py需要)
+mujoco>=2.3.0
+
+# 绘图 (仅retarget_shape.py需要)
+matplotlib>=3.3.0
+
+# 可选：开发和调试工具
+# ipdb  # 更好的调试器
+# pytest  # 单元测试
