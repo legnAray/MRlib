@@ -60,6 +60,8 @@ def get_motion_type(base_motion_flag, vx, vy, wz):
     7: stand              - 站立
     8: squat              - 蹲下
     9: unknown/other      - 未知/其他
+    
+    注意：这是单帧判断的临时版本，将被基于时间窗口的版本替代
     """
     speed = np.sqrt(vx**2 + vy**2)
     
@@ -109,6 +111,156 @@ def get_motion_type(base_motion_flag, vx, vy, wz):
     else:
         return 9  # unknown/other
 
+def detect_turning_with_lateral_velocity(target_vels, frame_idx, window_size=9):
+    """
+    基于侧向速度的转向检测，比角速度更准确
+    
+    Args:
+        target_vels: 速度序列 [[vx, vy, wz], ...], vy是侧向速度
+        frame_idx: 当前帧索引
+        window_size: 时间窗口大小（帧数），默认9帧=0.3秒
+    
+    Returns:
+        tuple: (is_turning, turn_direction, confidence)
+            - is_turning: bool, 是否在转向
+            - turn_direction: int, 转向方向 (1=左转(+vy), -1=右转(-vy), 0=不转向)
+            - confidence: float, 置信度 [0, 1]
+    """
+    # 确保输入是numpy数组
+    if not isinstance(target_vels, np.ndarray):
+        target_vels = np.array(target_vels)
+    
+    half_window = window_size // 2
+    start_idx = max(0, frame_idx - half_window)
+    end_idx = min(len(target_vels), frame_idx + half_window + 1)
+    
+    # 提取时间窗口内的速度数据
+    window_vels = target_vels[start_idx:end_idx]
+    
+    if len(window_vels) < 3:  # 窗口太小，无法判断
+        return False, 0, 0.0
+    
+    # 提取侧向速度vy（第1列）
+    window_vy = window_vels[:, 1]
+    
+    # 方法1：平均侧向速度强度
+    avg_vy = np.mean(window_vy)
+    abs_avg_vy = abs(avg_vy)
+    
+    # 方法2：一致性检测（标准差相对于均值的比例）
+    std_vy = np.std(window_vy)
+    consistency = 1.0 - min(1.0, std_vy / (abs_avg_vy + 0.1))  # 避免除零
+    
+    # 方法3：持续性检测（同向侧向速度的占比）
+    if abs_avg_vy > 0.05:  # 有明显侧向运动趋势
+        same_direction_frames = np.sum(np.sign(window_vy) == np.sign(avg_vy))
+        persistence = same_direction_frames / len(window_vy)
+    else:
+        persistence = 0.0
+    
+    # 综合判断参数 - 基于侧向速度的阈值（最终调整）
+    lateral_speed_threshold = 0.6     # 侧向速度阈值 (m/s) - 非常严格，只检测强烈转向
+    consistency_threshold = 0.6       # 一致性阈值 - 高要求  
+    persistence_threshold = 0.8       # 持续性阈值 - 要求80%同向
+    min_current_vy = 0.4             # 当前帧最小侧向速度要求 - 高阈值
+    
+    # 预检查：当前帧侧向速度必须足够大
+    center_idx = len(window_vy) // 2
+    current_frame_vy = abs(window_vy[center_idx]) if len(window_vy) > center_idx else abs_avg_vy
+    if current_frame_vy < min_current_vy:
+        # 如果当前帧侧向速度太小，直接判为非转向
+        return False, 0, 0.0
+    
+    # 多重条件判断
+    conditions_met = 0
+    
+    # 条件1：平均侧向速度超过阈值
+    if abs_avg_vy >= lateral_speed_threshold:
+        conditions_met += 1
+    
+    # 条件2：侧向速度一致性高
+    if consistency >= consistency_threshold:
+        conditions_met += 1
+        
+    # 条件3：持续性好
+    if persistence >= persistence_threshold:
+        conditions_met += 1
+    
+    # 需要满足至少2个条件才认为是转向
+    is_turning = conditions_met >= 2
+    
+    # 确定转向方向: +vy=左转, -vy=右转
+    if is_turning:
+        turn_direction = 1 if avg_vy > 0 else -1
+    else:
+        turn_direction = 0
+    
+    # 计算置信度 (0-1)
+    confidence = min(1.0, (
+        0.4 * min(1.0, abs_avg_vy / lateral_speed_threshold) +
+        0.3 * consistency +
+        0.3 * persistence
+    ))
+    
+    return is_turning, turn_direction, confidence
+
+def get_motion_type_with_temporal_analysis(base_motion_flag, vx, vy, target_vels, frame_idx):
+    """
+    基于时间窗口分析的运动类型判断（新版本）
+    
+    Args:
+        base_motion_flag: 基础运动标志
+        vx, vy: 当前帧的线速度
+        target_vels: 完整的速度序列 [[vx, vy, wz], ...]
+        frame_idx: 当前帧索引
+    """
+    speed = np.sqrt(vx**2 + vy**2)
+    
+    # 基础运动类型映射
+    base_types = {
+        0: "walk",
+        1: "run", 
+        2: "stand",
+        3: "squat",
+    }
+    
+    base_type = base_types.get(base_motion_flag, "unknown")
+    
+    # 使用时间窗口检测转向（基于侧向速度）
+    is_turning, turn_direction, confidence = detect_turning_with_lateral_velocity(
+        target_vels, frame_idx
+    )
+    
+    # 根据运动参数细分
+    if base_type == "walk":
+        if speed < 0.05:  # 几乎静止
+            return 0  # walk_in_place
+        elif is_turning and confidence > 0.5:  # 高置信度转向
+            if turn_direction > 0:
+                return 1  # left_turn_walk  
+            else:
+                return 2  # right_turn_walk
+        else:
+            return 3  # straight_walk
+            
+    elif base_type == "run":
+        if is_turning and confidence > 0.5:  # 高置信度转向
+            if turn_direction > 0:
+                return 4  # left_turn_run
+            else:
+                return 5  # right_turn_run
+        else:
+            return 6  # straight_run
+            
+    elif base_type == "stand":
+        return 7  # stand
+        
+    elif base_type == "squat":
+        return 8  # squat
+        
+    else:
+        return 9  # unknown/other
+
 def compute_yaw_from_quaternion(quat):
     """从四元数计算yaw角度"""
     # quat格式: [w, x, y, z]
@@ -132,9 +284,12 @@ def compute_task_info(root_trans_offset, root_rot_quat, base_motion_flag):
     total_frames = past_frames + future_frames  # 9个时间间隔
     time_span = total_frames * dt  # 9/30 = 0.3秒 (从t-2到t+7的时间跨度)
     
-    target_vels = []
-    motion_types = []
+
     
+    target_vels = []
+    angular_velocities = []  # 收集所有角速度用于时间窗口分析
+    
+    # 第一遍：计算所有帧的速度
     for i in range(len(root_trans_offset)):
         # 计算前2帧+后7帧的平均线速度和角速度
         if i >= past_frames and i + future_frames < len(root_trans_offset):
@@ -145,21 +300,23 @@ def compute_task_info(root_trans_offset, root_rot_quat, base_motion_flag):
             # 计算世界坐标系下的位移向量
             delta_pos_world = future_pos - past_pos
             
-            # *** 关键改进：将世界坐标系的位移转换到机器人局部坐标系 ***
-            # 使用当前时刻的机器人朝向来转换
-            current_quat = root_rot_quat[i]  # 根据测试结果，直接是[x,y,z,w]格式
+            # *** 智能坐标变换：根据运动类型选择合适的参考坐标系 ***
             
-            # 使用scipy进行坐标变换
-            # 根据测试结果，数据已经是scipy需要的[x,y,z,w]格式
-            rotation = scipyRot.from_quat(current_quat)
+            # 计算世界坐标系下的速度
+            vel_world = delta_pos_world / time_span
             
-            # 将世界坐标系的位移转换到机器人坐标系
-            # 使用旋转的逆变换（世界到局部）
-            delta_pos_local = rotation.inv().apply(delta_pos_world)
+            # *** 智能坐标变换：根据运动轨迹选择最佳参考坐标系 ***
             
-            # 计算机器人坐标系下的线速度
-            vel_x = delta_pos_local[0] / time_span  # 前进/后退方向
-            vel_y = delta_pos_local[1] / time_span  # 左/右方向
+            # 在第一次循环中，我们还不知道整体运动模式，所以暂时用机器人朝向
+            # 这个选择会在下面的智能判断后被优化
+            start_time_index = i - past_frames
+            reference_quat = root_rot_quat[start_time_index]
+            reference_rotation = scipyRot.from_quat(reference_quat)
+            vel_local = reference_rotation.inv().apply(vel_world)
+            
+            # 机器人坐标系下的速度
+            vel_x = vel_local[0]  # 前进/后退方向
+            vel_y = vel_local[1]  # 左/右方向
             
             # 计算角速度: (angle[t+7] - angle[t-2]) / (10/30)秒
             past_yaw = compute_yaw_from_quaternion(root_rot_quat[i - past_frames])
@@ -181,9 +338,57 @@ def compute_task_info(root_trans_offset, root_rot_quat, base_motion_flag):
         
         target_vel = [vel_x, vel_y, vel_z]
         target_vels.append(target_vel)
+        angular_velocities.append(vel_z)
+    
+    # 转换为numpy数组
+    angular_velocities = np.array(angular_velocities)
+    
+    # *** 智能优化：基于整体轨迹重新计算直线运动的速度 ***
+    start_pos = root_trans_offset[0]
+    end_pos = root_trans_offset[-1]
+    total_displacement = end_pos - start_pos
+    trajectory_distance = np.linalg.norm(total_displacement[:2])
+    
+    use_trajectory_reference = False
+    if trajectory_distance > 1.0:  # 有明显位移的运动
+        # 计算轨迹偏离度
+        mid_pos = root_trans_offset[len(root_trans_offset)//2]
+        line_direction = total_displacement[:2] / trajectory_distance
+        start_to_mid = mid_pos - start_pos
+        projection_length = np.dot(start_to_mid[:2], line_direction)
+        projection_point = start_pos[:2] + projection_length * line_direction
+        trajectory_deviation = np.linalg.norm(mid_pos[:2] - projection_point)
         
-        # 计算motion_type
-        motion_type = get_motion_type(base_motion_flag, vel_x, vel_y, vel_z)
+        if trajectory_deviation < 0.2:
+            # 直线运动：使用轨迹方向重新计算速度
+            use_trajectory_reference = True
+            trajectory_direction_2d = total_displacement[:2] / trajectory_distance
+            trajectory_yaw = np.arctan2(trajectory_direction_2d[1], trajectory_direction_2d[0])
+            trajectory_rotation = scipyRot.from_euler('z', trajectory_yaw)
+            
+            # 重新计算所有速度
+            for i in range(len(root_trans_offset)):
+                if i >= past_frames and i + future_frames < len(root_trans_offset):
+                    future_pos = root_trans_offset[i + future_frames]
+                    past_pos = root_trans_offset[i - past_frames]
+                    delta_pos_world = future_pos - past_pos
+                    vel_world = delta_pos_world / time_span
+                    
+                    # 使用轨迹坐标系
+                    vel_local = trajectory_rotation.inv().apply(vel_world)
+                    target_vels[i] = [vel_local[0], vel_local[1], target_vels[i][2]]  # 保持角速度不变
+            
+            print(f"使用轨迹坐标系优化直线运动 (偏离={trajectory_deviation:.3f}m)")
+    
+    # 第二遍：基于完整的角速度序列计算运动类型
+    motion_types = []
+    for i in range(len(target_vels)):
+        vel_x, vel_y, vel_z = target_vels[i]
+        
+        # 使用新的时间窗口转向检测方法（基于侧向速度）
+        motion_type = get_motion_type_with_temporal_analysis(
+            base_motion_flag, vel_x, vel_y, target_vels, i
+        )
         motion_types.append(motion_type)
     
     return {
