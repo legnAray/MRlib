@@ -47,29 +47,18 @@ pip install -r requirements.txt
 
 ## 使用方法
 
-### 第一步：形状重定向
+### 第一步：SMPL模型参数辨识
 
-运行以下命令进行形状匹配：
 
 ```bash
 python scripts/retarget_shape.py \
     robot=unitree_g1_29dof \
-    +smpl_model_path=/path/to/your/smpl \
-    +amass_path=/path/to/your/amass/data \
+    +smpl_model_path=/path/to/your/smpl\
     output_path=output \
-    +fit_all=True
+    +vis=True
 ```
 
-参数说明：
-- `robot`: 目标机器人类型
-- `smpl_model_path`: SMPL模型文件路径
-- `amass_path`: AMASS数据集路径
-- `output_path`: 输出文件夹路径
-- `fit_all`: 是否处理所有数据
-
 ### 第二步：运动重定向
-
-运行以下命令进行运动重定向：
 
 ```bash
 python scripts/retarget_motion.py \
@@ -80,8 +69,6 @@ python scripts/retarget_motion.py \
 ```
 
 ### 第三步：可视化结果
-
-使用以下命令可视化重定向后的运动：
 
 ```bash
 python scripts/play_motion.py +motion_file=output/g1_29dof/test/all_data.pkl

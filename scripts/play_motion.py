@@ -115,7 +115,8 @@ def main(cfg : DictConfig) -> None:
             try:
                 mj_data.qpos[:3] = curr_motion['root_trans_offset'][curr_time]
                 mj_data.qpos[3:7] = curr_motion['root_rot'][curr_time][[3, 0, 1, 2]]
-                mj_data.qpos[7:] = curr_motion['dof'][curr_time]
+                # mj_data.qpos[7:] = curr_motion['dof'][curr_time]
+                mj_data.qpos[7:] = curr_motion['dof_increment'][curr_time] + curr_motion['default_joint_angles']
             except IndexError as e:
                 print(f"数据索引错误: {e}, curr_time={curr_time}, max_frames={max_frames}")
                 time_step = 0

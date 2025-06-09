@@ -66,6 +66,16 @@ def load_amass_data(data_path):
 def process_motion(key_names, key_name_to_pkls, cfg):
     device = torch.device("cpu")
     
+    # 默认关节角度（unitree_g1_29dof的标准姿态）
+    # 顺序：左腿6个 + 右腿6个 + 腰部3个 + 左臂7个 + 右臂7个 = 29个关节
+    default_joint_angles = np.array([
+        -0.12, 0, 0, 0.45, -0.31, 0,    # 左腿6个关节：hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll
+        -0.12, 0, 0, 0.45, -0.31, 0,    # 右腿6个关节：hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll  
+        0, 0, 0,                        # 腰部3个关节：waist_yaw, waist_roll, waist_pitch
+        0, 0.62, 0, 1.04, 0, 0, 0,      # 左臂7个关节：shoulder_pitch, shoulder_roll, shoulder_yaw, elbow, wrist_roll, wrist_pitch, wrist_yaw
+        0, -0.62, 1.04, 0, 0, 0, 0      # 右臂7个关节：shoulder_pitch, shoulder_roll, shoulder_yaw, elbow, wrist_roll, wrist_pitch, wrist_yaw
+    ])
+    
     humanoid_fk = Humanoid_Batch(cfg.robot) # load forward kinematics model
     num_augment_joint = len(cfg.robot.extend_config)
 
@@ -185,6 +195,9 @@ def process_motion(key_names, key_name_to_pkls, cfg):
         joints_np[..., 2] -= lowest_height
         root_trans_offset_np[..., 2] -= lowest_height
 
+        # 计算增量关节角度（当前角度 - 默认角度）
+        dof_increment = dof_np - default_joint_angles[None, :]
+
         data_dump = {
                     "root_trans_offset": root_trans_offset_np,
                     # "pose_aa": pose_aa_robot_new.squeeze().detach().numpy(),
@@ -192,6 +205,8 @@ def process_motion(key_names, key_name_to_pkls, cfg):
                     "gait_flag": gait_flag,
                     "root_trans_vel": root_trans_vel_np,
                     "dof": dof_np, 
+                    "dof_increment": dof_increment,  
+                    "default_joint_angles": default_joint_angles,  
                     "root_rot": root_rot_np,
                     "smpl_joints": joints_np, 
                     "fps": fps
@@ -259,8 +274,8 @@ def main(cfg: DictConfig):
     else:
         # 如果有多个运动文件，保存到以数据集名称命名的子文件夹
         os.makedirs(f'{cfg.output_path}/{cfg.robot.humanoid_type}/{motion_name}', exist_ok=True)
-        joblib.dump(all_data, f'{cfg.output_path}/{cfg.robot.humanoid_type}/{motion_name}/all_data.pkl')
-        print(f"运动重定向完成，处理了{len(all_data)}个运动文件，保存到 {cfg.output_path}/{cfg.robot.humanoid_type}/{motion_name}/all_data.pkl")
+        joblib.dump(all_data, f'{cfg.output_path}/{cfg.robot.humanoid_type}/{motion_name}/{motion_name}.pkl')
+        print(f"运动重定向完成，处理了{len(all_data)}个运动文件，保存到 {cfg.output_path}/{cfg.robot.humanoid_type}/{motion_name}/{motion_name}.pkl")
 
 if __name__ == "__main__":
     main()
