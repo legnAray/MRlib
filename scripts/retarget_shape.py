@@ -1,6 +1,8 @@
 # 在导入任何库之前设置环境变量
 import os
 os.environ["OMP_NUM_THREADS"] = "1"
+import sys
+sys.path.append(os.getcwd())
 
 import torch
 import numpy as np
@@ -25,12 +27,12 @@ import yaml
 from mrlib.utils.torch_humanoid_batch import Humanoid_Batch
 from omegaconf import DictConfig
 
-@hydra.main(version_base=None, config_path="./cfg", config_name="config")
+@hydra.main(version_base=None, config_path="../cfg", config_name="config")
 def main(cfg : DictConfig) -> None:
     
     humanoid_fk = Humanoid_Batch(cfg.robot) # load forward kinematics model
 
-    #### Define corresonpdances between h1 and smpl joints
+    #### Define corresonpdances between robots and smpl joints
     robot_joint_names_augment = humanoid_fk.body_names_augment 
     robot_joint_pick = [i[0] for i in cfg.robot.joint_matches]
     smpl_joint_pick = [i[1] for i in cfg.robot.joint_matches]
@@ -42,7 +44,7 @@ def main(cfg : DictConfig) -> None:
     pose_aa_robot = np.repeat(np.repeat(scipyRot.identity().as_rotvec()[None, None, None, ], humanoid_fk.num_bodies , axis = 2), 1, axis = 1)
     pose_aa_robot = torch.from_numpy(pose_aa_robot).float()
     
-    ###### prepare SMPL default pause for H1
+    ###### prepare SMPL default pose
     pose_aa_stand = np.zeros((1, 72))
     pose_aa_stand = pose_aa_stand.reshape(-1, 24, 3)
     
@@ -120,7 +122,7 @@ def main(cfg : DictConfig) -> None:
 
     output_dir = f"{cfg.output_path}/{cfg.robot.humanoid_type}"
     os.makedirs(output_dir, exist_ok=True)
-    joblib.dump((shape_new.detach(), scale), f"{output_dir}/shape_optimized_v1.pkl") # V2 has hip joints
+    joblib.dump((shape_new.detach(), scale), f"{output_dir}/shape_optimized.pkl")
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ project_name: "MRlib"
 exp_name: &exp_name mrlib_retarget
 headless: True
 seed: 0
-output_path: output/MRlib/${exp_name}
+output_path: output
 rl_device: "cuda:0"
 device: "cuda"
 device_id: 0
@@ -18,5 +18,5 @@ hydra:
     env_set:
       OMP_NUM_THREADS: 1
   run:
-    dir: output/MRlib/${exp_name}
+    dir: output
 

@@ -346,7 +346,7 @@ class Humanoid_Batch:
         face_count = 0
 
         if not self.body_mesh:
-            logging.warning("body_mesh is empty in mesh_fk. Cannot compute mesh vertices. Returning FK translations.")
+            # logging.warning("body_mesh is empty in mesh_fk. Cannot compute mesh vertices. Returning FK translations.")
             # Fallback: if no mesh, return the joint translations directly. This might not be perfect for ground contact.
             return fk_res.global_translation_extend
 

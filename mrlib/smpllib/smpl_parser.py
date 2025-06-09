@@ -4,7 +4,7 @@
 import torch
 import numpy as np
 import os.path as osp
-from smplx import SMPL as _SMPL
+from smplx import SMPL as _SMPL, SMPLX
 from smplx import SMPLH as _SMPLH
 from smplx import SMPLX as _SMPLX
 
@@ -539,4 +539,5 @@ class SMPLX_Parser(_SMPLX):
 
 
 if __name__ == "__main__":
-    smpl_p = SMPLH_Parser("/hdd/zen/dev/copycat/Copycat/data/smpl", gender="neutral")
+    # smpl_p = SMPLH_Parser("/hdd/zen/dev/copycat/Copycat/data/smpl", gender="neutral")
+    smpl_p = SMPLX_Parser("/hdd/zen/dev/copycat/Copycat/data/smpl", gender="neutral")

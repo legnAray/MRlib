@@ -59,7 +59,7 @@ def key_call_back(keycode):
         print("未映射的按键:", chr(keycode))
     
     
-@hydra.main(version_base=None, config_path="./cfg", config_name="config")
+@hydra.main(version_base=None, config_path="../cfg", config_name="config")
 def main(cfg : DictConfig) -> None:
     global curr_start, num_motions, motion_id, motion_acc, time_step, dt, paused, motion_data_keys
     device = torch.device("cpu")
