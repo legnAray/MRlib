@@ -43,6 +43,155 @@ from hydra.utils import to_absolute_path
 from omegaconf import DictConfig
 import open3d as o3d
 
+
+
+def get_motion_type(base_motion_flag, vx, vy, wz):
+    """
+    根据基础motion_flag和运动参数确定详细的motion_type
+    
+    Motion Type 编码表:
+    0: walk_in_place      - 原地踏步
+    1: left_turn_walk     - 左转行走  
+    2: right_turn_walk    - 右转行走
+    3: straight_walk      - 直线行走
+    4: left_turn_run      - 左转跑步
+    5: right_turn_run     - 右转跑步
+    6: straight_run       - 直线跑步
+    7: stand              - 站立
+    8: squat              - 蹲下
+    9: unknown/other      - 未知/其他
+    """
+    speed = np.sqrt(vx**2 + vy**2)
+    
+    # 基础运动类型映射
+    base_types = {
+        0: "walk",
+        1: "run", 
+        2: "stand",
+        3: "squat",
+        # 移除dance，可以根据需要扩展其他类型
+    }
+    
+    base_type = base_types.get(base_motion_flag, "unknown")
+    
+    # 调整转向阈值，考虑机器人坐标系下的实际运动特点
+    # 对于直线运动，允许更大的角速度摇晃 (从0.3提高到0.8 rad/s，约46度/秒)
+    # 这是因为正常的直线行走/跑步会有自然的身体摇摆
+    turn_threshold = 0.8  # rad/s，约45度/秒
+    
+    # 根据运动参数细分
+    if base_type == "walk":
+        if speed < 0.05:  # 几乎静止
+            return 0  # walk_in_place
+        elif abs(wz) > turn_threshold:  # 有明显转向
+            if wz > 0:
+                return 1  # left_turn_walk  
+            else:
+                return 2  # right_turn_walk
+        else:
+            return 3  # straight_walk
+            
+    elif base_type == "run":
+        if abs(wz) > turn_threshold:  # 有明显转向
+            if wz > 0:
+                return 4  # left_turn_run
+            else:
+                return 5  # right_turn_run
+        else:
+            return 6  # straight_run
+            
+    elif base_type == "stand":
+        return 7  # stand
+        
+    elif base_type == "squat":
+        return 8  # squat
+        
+    else:
+        return 9  # unknown/other
+
+def compute_yaw_from_quaternion(quat):
+    """从四元数计算yaw角度"""
+    # quat格式: [w, x, y, z]
+    w, x, y, z = quat
+    # 计算yaw角 (绕z轴旋转)
+    siny_cosp = 2 * (w * z + x * y)
+    cosy_cosp = 1 - 2 * (y * y + z * z)
+    yaw = np.arctan2(siny_cosp, cosy_cosp)
+    return yaw
+
+def compute_task_info(root_trans_offset, root_rot_quat, base_motion_flag):
+    """
+    计算task_info: target_vel和motion_type
+    使用前2帧+后7帧的中心差分方法计算速度，更平滑且响应更快
+    关键改进：将世界坐标系下的速度转换为机器人局部坐标系下的速度
+    """
+    fps = 30
+    dt = 1.0 / fps
+    past_frames = 2      # 前2帧
+    future_frames = 7    # 后7帧
+    total_frames = past_frames + future_frames  # 9个时间间隔
+    time_span = total_frames * dt  # 9/30 = 0.3秒 (从t-2到t+7的时间跨度)
+    
+    target_vels = []
+    motion_types = []
+    
+    for i in range(len(root_trans_offset)):
+        # 计算前2帧+后7帧的平均线速度和角速度
+        if i >= past_frames and i + future_frames < len(root_trans_offset):
+            # 有完整的前2帧和后7帧
+            future_pos = root_trans_offset[i + future_frames]    # t+7
+            past_pos = root_trans_offset[i - past_frames]        # t-2
+            
+            # 计算世界坐标系下的位移向量
+            delta_pos_world = future_pos - past_pos
+            
+            # *** 关键改进：将世界坐标系的位移转换到机器人局部坐标系 ***
+            # 使用当前时刻的机器人朝向来转换
+            current_quat = root_rot_quat[i]  # 根据测试结果，直接是[x,y,z,w]格式
+            
+            # 使用scipy进行坐标变换
+            # 根据测试结果，数据已经是scipy需要的[x,y,z,w]格式
+            rotation = scipyRot.from_quat(current_quat)
+            
+            # 将世界坐标系的位移转换到机器人坐标系
+            # 使用旋转的逆变换（世界到局部）
+            delta_pos_local = rotation.inv().apply(delta_pos_world)
+            
+            # 计算机器人坐标系下的线速度
+            vel_x = delta_pos_local[0] / time_span  # 前进/后退方向
+            vel_y = delta_pos_local[1] / time_span  # 左/右方向
+            
+            # 计算角速度: (angle[t+7] - angle[t-2]) / (10/30)秒
+            past_yaw = compute_yaw_from_quaternion(root_rot_quat[i - past_frames])
+            future_yaw = compute_yaw_from_quaternion(root_rot_quat[i + future_frames])
+            
+            # 处理角度跳跃 (-π 到 π)
+            delta_yaw = future_yaw - past_yaw
+            if delta_yaw > np.pi:
+                delta_yaw -= 2 * np.pi
+            elif delta_yaw < -np.pi:
+                delta_yaw += 2 * np.pi
+                
+            vel_z = delta_yaw / time_span
+            
+        else:
+            # 对于前2帧和后7帧，无法计算完整的窗口信息，设为0
+            # 这些帧会在后续截断中被移除
+            vel_x = vel_y = vel_z = 0.0
+        
+        target_vel = [vel_x, vel_y, vel_z]
+        target_vels.append(target_vel)
+        
+        # 计算motion_type
+        motion_type = get_motion_type(base_motion_flag, vel_x, vel_y, vel_z)
+        motion_types.append(motion_type)
+    
+    return {
+        "target_vel": np.array(target_vels),
+        "motion_type": np.array(motion_types),
+        "base_motion_flag": base_motion_flag
+    }
+
 def load_amass_data(data_path):
     entry_data = dict(np.load(open(data_path, "rb"), allow_pickle=True))
 
@@ -197,20 +346,56 @@ def process_motion(key_names, key_name_to_pkls, cfg):
 
         # 计算增量关节角度（当前角度 - 默认角度）
         dof_increment = dof_np - default_joint_angles[None, :]
+        
+        # 先在完整数据上计算task_info，然后再截断
+        # 检查数据长度是否足够计算task_info（需要前2帧+后7帧，至少10帧）
+        if len(root_trans_offset_np) < 10:
+            print(f"⚠️  数据太短({len(root_trans_offset_np)}帧)，跳过task_info计算")
+            task_info = None
+            # 不截断，保持原始数据
+        else:
+            # 先在完整数据上计算task_info（这样有足够的前后帧）
+            task_info_full = compute_task_info(root_trans_offset_np, root_rot_np, motion_flag)
+            
+            # 然后截断前2帧和后7帧（包括task_info）
+            start_idx = 2  # 跳过前2帧
+            end_idx = len(root_trans_offset_np) - 7  # 跳过后7帧
+            
+            # 截断所有相关数组
+            root_trans_offset_np = root_trans_offset_np[start_idx:end_idx]
+            dof_np = dof_np[start_idx:end_idx] 
+            root_rot_np = root_rot_np[start_idx:end_idx]
+            joints_np = joints_np[start_idx:end_idx]
+            dof_increment = dof_increment[start_idx:end_idx]
+            gait_flag = gait_flag[start_idx:end_idx]
+            
+            # 截断task_info
+            task_info = {
+                "target_vel": task_info_full["target_vel"][start_idx:end_idx],
+                "motion_type": task_info_full["motion_type"][start_idx:end_idx],
+                "base_motion_flag": task_info_full["base_motion_flag"]
+            }
+            
+            truncate_length = end_idx - start_idx
+            print(f"✅ 计算task_info (前2+后7帧方法)，截断后长度: {truncate_length}帧")
 
         data_dump = {
                     "root_trans_offset": root_trans_offset_np,
                     # "pose_aa": pose_aa_robot_new.squeeze().detach().numpy(),
                     "root_height": root_trans_offset_np[...,2],
                     "gait_flag": gait_flag,
-                    "root_trans_vel": root_trans_vel_np,
+                    # "root_trans_vel": root_trans_vel_np,
                     "dof": dof_np, 
                     "dof_increment": dof_increment,  
                     "default_joint_angles": default_joint_angles,  
                     "root_rot": root_rot_np,
-                    "smpl_joints": joints_np, 
+                    "smpl_joints": joints_np, # 用于可视化
                     "fps": fps
                     }
+        
+        # 添加task_info到数据中
+        if task_info is not None:
+            data_dump["task_info"] = task_info
         all_data[data_key] = data_dump
         print(f"✅ 完成处理: {data_key}")
     return all_data
@@ -218,7 +403,7 @@ def process_motion(key_names, key_name_to_pkls, cfg):
 @hydra.main(version_base=None, config_path="../cfg", config_name="config")
 def main(cfg: DictConfig):
     global motion_flag
-    motion_flag = 0
+    motion_flag = 1
 
     amass_root = cfg.amass_path
     motion_name = os.path.basename(os.path.normpath(amass_root))
@@ -276,6 +461,9 @@ def main(cfg: DictConfig):
         os.makedirs(f'{cfg.output_path}/{cfg.robot.humanoid_type}/{motion_name}', exist_ok=True)
         joblib.dump(all_data, f'{cfg.output_path}/{cfg.robot.humanoid_type}/{motion_name}/{motion_name}.pkl')
         print(f"运动重定向完成，处理了{len(all_data)}个运动文件，保存到 {cfg.output_path}/{cfg.robot.humanoid_type}/{motion_name}/{motion_name}.pkl")
+    
+    print(f"数据包含：关节角度(dof)、增量角度(dof_increment)、默认角度(default_joint_angles)、任务信息(task_info)等")
+    print(f"task_info包含：target_vel(目标速度[vx,vy,wz])、motion_type(运动类型0-9)、base_motion_flag(原始标志)")
 
 if __name__ == "__main__":
     main()
