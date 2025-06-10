@@ -158,7 +158,7 @@ def analyze_motion_stats(motion_data, current_motion_key=None):
     print("\n" + "="*80)
 
 def key_call_back(keycode):
-    global curr_start, num_motions, motion_id, motion_acc, time_step, dt, paused, motion_data_keys, info_display_interval, motion_data, motion_id
+    global curr_start, num_motions, motion_id, motion_acc, time_step, dt, paused, motion_data_keys, info_display_interval, motion_data, motion_id, playback_speed
     if chr(keycode) == "R":
         print("Reset")
         time_step = 0
@@ -195,19 +195,54 @@ def key_call_back(keycode):
         # 显示所有动作统计信息
         print("📊 显示所有动作统计信息...")
         analyze_motion_stats(motion_data)
+    # 新增播放速度控制
+    elif chr(keycode) == "1":
+        playback_speed = 0.25
+        print(f"🎬 播放速度: {playback_speed}x (1/4倍速)")
+    elif chr(keycode) == "2":
+        playback_speed = 0.5
+        print(f"🎬 播放速度: {playback_speed}x (1/2倍速)")
+    elif chr(keycode) == "3":
+        playback_speed = 1.0
+        print(f"🎬 播放速度: {playback_speed}x (正常倍速)")
+    elif chr(keycode) == "4":
+        playback_speed = 2.0
+        print(f"🎬 播放速度: {playback_speed}x (2倍速)")
+    elif chr(keycode) == "5":
+        playback_speed = 4.0
+        print(f"🎬 播放速度: {playback_speed}x (4倍速)")
+    elif chr(keycode) == "+":
+        # 增加播放速度
+        if playback_speed < 0.5:
+            playback_speed = min(0.5, playback_speed + 0.25)
+        elif playback_speed < 2.0:
+            playback_speed = min(2.0, playback_speed + 0.5)
+        else:
+            playback_speed = min(8.0, playback_speed + 1.0)
+        print(f"🎬 播放速度: {playback_speed}x")
+    elif chr(keycode) == "-":
+        # 减少播放速度
+        if playback_speed > 2.0:
+            playback_speed = max(2.0, playback_speed - 1.0)
+        elif playback_speed > 0.5:
+            playback_speed = max(0.5, playback_speed - 0.5)
+        else:
+            playback_speed = max(0.1, playback_speed - 0.1)
+        print(f"🎬 播放速度: {playback_speed}x")
     else:
         print("未映射的按键:", chr(keycode))
     
     
 @hydra.main(version_base=None, config_path="../cfg", config_name="config")
 def main(cfg : DictConfig) -> None:
-    global curr_start, num_motions, motion_id, motion_acc, time_step, dt, paused, motion_data_keys, info_display_interval, motion_data
+    global curr_start, num_motions, motion_id, motion_acc, time_step, dt, paused, motion_data_keys, info_display_interval, motion_data, playback_speed
     device = torch.device("cpu")
     humanoid_xml = cfg.robot.asset.assetFileName
     sk_tree = SkeletonTree.from_mjcf(humanoid_xml)
     
     curr_start, num_motions, motion_id, motion_acc, time_step, dt, paused = 0, 1, 0, set(), 0, 1/30, False
     info_display_interval = 10  # 信息显示间隔帧数
+    playback_speed = 1.0  # 播放速度倍数
     
     motion_file = cfg.get("motion_file", f"{cfg.output_path}/{cfg.robot.humanoid_type}/motion_im.p")
     
@@ -248,7 +283,17 @@ def main(cfg : DictConfig) -> None:
     print("  S键: 显示当前动作统计信息")
     print("  A键: 显示所有动作统计信息")
     print("")
+    print("🎬 播放速度控制:")
+    print("  1键: 0.25x (1/4倍速)")
+    print("  2键: 0.5x (1/2倍速)")
+    print("  3键: 1.0x (正常倍速)")
+    print("  4键: 2.0x (2倍速)")
+    print("  5键: 4.0x (4倍速)")
+    print("  +键: 增加播放速度")
+    print("  -键: 减少播放速度")
+    print("")
     print("🔄 Task Info显示间隔: 每10帧")
+    print(f"🎬 当前播放速度: {playback_speed}x")
     
     with mujoco.viewer.launch_passive(mj_model, mj_data, key_callback=key_call_back) as viewer:
         for _ in range(25):
@@ -274,12 +319,12 @@ def main(cfg : DictConfig) -> None:
                 
             mujoco.mj_forward(mj_model, mj_data)
             if not paused:
-                time_step += dt
+                time_step += dt * playback_speed  # 根据播放速度调整时间步进
 
             # 根据设置的间隔显示task_info
             if curr_time % info_display_interval == 0:
                 print(f"\n{'='*50}")
-                print(f"🎬 动作: {curr_motion_key}")
+                print(f"🎬 动作: {curr_motion_key} | 播放速度: {playback_speed}x")
                 print(f"📍 帧: {curr_time}/{max_frames} | 时间: {curr_time/30:.2f}s")
                 
                 # 显示task_info信息

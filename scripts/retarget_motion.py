@@ -32,7 +32,7 @@ from omegaconf import DictConfig
 import open3d as o3d
 
 # 配置常量
-MOTION_FLAG = 1  # 替代全局变量
+MOTION_FLAG = 0  # 替代全局变量
 FPS = 30
 PAST_FRAMES = 2
 FUTURE_FRAMES = 7
