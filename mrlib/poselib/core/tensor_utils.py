@@ -8,7 +8,7 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 from collections import OrderedDict
-from .backend import Serializable
+from .abstract import Serializable
 import torch
 
 

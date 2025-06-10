@@ -7,109 +7,58 @@ sys.path.append(os.getcwd())
 
 import torch
 import numpy as np
-import yaml
 import joblib
-import glob  # 添加缺失的glob导入
-import sys
-import pdb
-import os.path as osp
-import math
-import logging
-from tqdm import tqdm
-from easydict import EasyDict
+import glob
 
 # mrlib_core imports
 import mrlib.poselib.core.rotation3d as pRot
 import mrlib.utils.rotation_conversions as sRot
 from mrlib.utils import torch_utils
-from mrlib.poselib.skeleton.skeleton3d import SkeletonTree, SkeletonMotion, SkeletonState
-from mrlib.smpllib.smpl_parser import SMPL_Parser, SMPLH_Parser, SMPLX_Parser
+from mrlib.smpllib.smpl_parser import SMPL_Parser
 from mrlib.smpllib.smpl_joint_names import (
-    SMPL_MUJOCO_NAMES, SMPL_BONE_ORDER_NAMES, 
-    SMPLH_BONE_ORDER_NAMES, SMPLH_MUJOCO_NAMES
+    SMPL_BONE_ORDER_NAMES, 
 )
-from mrlib.utils.pytorch3d_transforms import axis_angle_to_matrix, fix_continous_dof
-from mrlib.utils.smoothing_utils import gaussian_kernel_1d, gaussian_filter_1d_batch
+from mrlib.utils.rotation_conversions import axis_angle_to_matrix, fix_continous_dof
+from mrlib.utils.smoothing_utils import gaussian_filter_1d_batch
 
 # project-specific imports
 from mrlib.utils.torch_humanoid_batch import Humanoid_Batch
-from mrlib.utils.misc import smooth_smpl_quat_tensor, fix_continous_smpl_dof
 
 # third-party imports
-from scipy.spatial.transform import Rotation as scipyRot  # 重命名避免冲突
+from scipy.spatial.transform import Rotation as scipyRot
 import torch.nn.functional as F
 import hydra
-from hydra.utils import to_absolute_path
 from omegaconf import DictConfig
 import open3d as o3d
 
+# 配置常量
+MOTION_FLAG = 1  # 替代全局变量
+FPS = 30
+PAST_FRAMES = 2
+FUTURE_FRAMES = 7
+TOTAL_FRAMES = PAST_FRAMES + FUTURE_FRAMES
+TIME_SPAN = TOTAL_FRAMES / FPS
 
+# 运动检测阈值常量
+LATERAL_SPEED_THRESHOLD = 0.6
+CONSISTENCY_THRESHOLD = 0.6  
+PERSISTENCE_THRESHOLD = 0.8
+MIN_CURRENT_VY = 0.4
+TURN_THRESHOLD = 0.8  # rad/s
 
-def get_motion_type(base_motion_flag, vx, vy, wz):
-    """
-    根据基础motion_flag和运动参数确定详细的motion_type
-    
-    Motion Type 编码表:
-    0: walk_in_place      - 原地踏步
-    1: left_turn_walk     - 左转行走  
-    2: right_turn_walk    - 右转行走
-    3: straight_walk      - 直线行走
-    4: left_turn_run      - 左转跑步
-    5: right_turn_run     - 右转跑步
-    6: straight_run       - 直线跑步
-    7: stand              - 站立
-    8: squat              - 蹲下
-    9: unknown/other      - 未知/其他
-    
-    注意：这是单帧判断的临时版本，将被基于时间窗口的版本替代
-    """
-    speed = np.sqrt(vx**2 + vy**2)
-    
-    # 基础运动类型映射
-    base_types = {
-        0: "walk",
-        1: "run", 
-        2: "stand",
-        3: "squat",
-        # 移除dance，可以根据需要扩展其他类型
-    }
-    
-    base_type = base_types.get(base_motion_flag, "unknown")
-    
-    # 调整转向阈值，考虑机器人坐标系下的实际运动特点
-    # 对于直线运动，允许更大的角速度摇晃 (从0.3提高到0.8 rad/s，约46度/秒)
-    # 这是因为正常的直线行走/跑步会有自然的身体摇摆
-    turn_threshold = 0.8  # rad/s，约45度/秒
-    
-    # 根据运动参数细分
-    if base_type == "walk":
-        if speed < 0.05:  # 几乎静止
-            return 0  # walk_in_place
-        elif abs(wz) > turn_threshold:  # 有明显转向
-            if wz > 0:
-                return 1  # left_turn_walk  
-            else:
-                return 2  # right_turn_walk
-        else:
-            return 3  # straight_walk
-            
-    elif base_type == "run":
-        if abs(wz) > turn_threshold:  # 有明显转向
-            if wz > 0:
-                return 4  # left_turn_run
-            else:
-                return 5  # right_turn_run
-        else:
-            return 6  # straight_run
-            
-    elif base_type == "stand":
-        return 7  # stand
-        
-    elif base_type == "squat":
-        return 8  # squat
-        
-    else:
-        return 9  # unknown/other
+# 运动类型编码
+MOTION_TYPES = {
+    0: "walk_in_place",
+    1: "left_turn_walk", 
+    2: "right_turn_walk",
+    3: "straight_walk",
+    4: "left_turn_run",
+    5: "right_turn_run", 
+    6: "straight_run",
+    7: "stand",
+    8: "squat",
+    9: "unknown"
+}
 
 def detect_turning_with_lateral_velocity(target_vels, frame_idx, window_size=9):
     """
@@ -158,32 +107,27 @@ def detect_turning_with_lateral_velocity(target_vels, frame_idx, window_size=9):
     else:
         persistence = 0.0
     
-    # 综合判断参数 - 基于侧向速度的阈值（最终调整）
-    lateral_speed_threshold = 0.6     # 侧向速度阈值 (m/s) - 非常严格，只检测强烈转向
-    consistency_threshold = 0.6       # 一致性阈值 - 高要求  
-    persistence_threshold = 0.8       # 持续性阈值 - 要求80%同向
-    min_current_vy = 0.4             # 当前帧最小侧向速度要求 - 高阈值
+    # 使用全局常量替代硬编码值
     
     # 预检查：当前帧侧向速度必须足够大
     center_idx = len(window_vy) // 2
     current_frame_vy = abs(window_vy[center_idx]) if len(window_vy) > center_idx else abs_avg_vy
-    if current_frame_vy < min_current_vy:
-        # 如果当前帧侧向速度太小，直接判为非转向
+    if current_frame_vy < MIN_CURRENT_VY:
         return False, 0, 0.0
     
     # 多重条件判断
     conditions_met = 0
     
     # 条件1：平均侧向速度超过阈值
-    if abs_avg_vy >= lateral_speed_threshold:
+    if abs_avg_vy >= LATERAL_SPEED_THRESHOLD:
         conditions_met += 1
     
     # 条件2：侧向速度一致性高
-    if consistency >= consistency_threshold:
+    if consistency >= CONSISTENCY_THRESHOLD:
         conditions_met += 1
         
     # 条件3：持续性好
-    if persistence >= persistence_threshold:
+    if persistence >= PERSISTENCE_THRESHOLD:
         conditions_met += 1
     
     # 需要满足至少2个条件才认为是转向
@@ -197,7 +141,7 @@ def detect_turning_with_lateral_velocity(target_vels, frame_idx, window_size=9):
     
     # 计算置信度 (0-1)
     confidence = min(1.0, (
-        0.4 * min(1.0, abs_avg_vy / lateral_speed_threshold) +
+        0.4 * min(1.0, abs_avg_vy / LATERAL_SPEED_THRESHOLD) +
         0.3 * consistency +
         0.3 * persistence
     ))
@@ -262,14 +206,9 @@ def get_motion_type_with_temporal_analysis(base_motion_flag, vx, vy, target_vels
         return 9  # unknown/other
 
 def compute_yaw_from_quaternion(quat):
-    """从四元数计算yaw角度"""
-    # quat格式: [w, x, y, z]
-    w, x, y, z = quat
-    # 计算yaw角 (绕z轴旋转)
-    siny_cosp = 2 * (w * z + x * y)
-    cosy_cosp = 1 - 2 * (y * y + z * z)
-    yaw = np.arctan2(siny_cosp, cosy_cosp)
-    return yaw
+    """从四元数计算yaw角度 - 使用scipy"""
+    # 使用scipy的标准转换，避免重复实现
+    return scipyRot.from_quat(quat).as_euler('xyz')[2]
 
 def compute_task_info(root_trans_offset, root_rot_quat, base_motion_flag):
     """
@@ -277,14 +216,6 @@ def compute_task_info(root_trans_offset, root_rot_quat, base_motion_flag):
     使用前2帧+后7帧的中心差分方法计算速度，更平滑且响应更快
     关键改进：将世界坐标系下的速度转换为机器人局部坐标系下的速度
     """
-    fps = 30
-    dt = 1.0 / fps
-    past_frames = 2      # 前2帧
-    future_frames = 7    # 后7帧
-    total_frames = past_frames + future_frames  # 9个时间间隔
-    time_span = total_frames * dt  # 9/30 = 0.3秒 (从t-2到t+7的时间跨度)
-    
-
     
     target_vels = []
     angular_velocities = []  # 收集所有角速度用于时间窗口分析
@@ -292,24 +223,21 @@ def compute_task_info(root_trans_offset, root_rot_quat, base_motion_flag):
     # 第一遍：计算所有帧的速度
     for i in range(len(root_trans_offset)):
         # 计算前2帧+后7帧的平均线速度和角速度
-        if i >= past_frames and i + future_frames < len(root_trans_offset):
+        if i >= PAST_FRAMES and i + FUTURE_FRAMES < len(root_trans_offset):
             # 有完整的前2帧和后7帧
-            future_pos = root_trans_offset[i + future_frames]    # t+7
-            past_pos = root_trans_offset[i - past_frames]        # t-2
+            future_pos = root_trans_offset[i + FUTURE_FRAMES]    # t+7
+            past_pos = root_trans_offset[i - PAST_FRAMES]        # t-2
             
             # 计算世界坐标系下的位移向量
             delta_pos_world = future_pos - past_pos
             
-            # *** 智能坐标变换：根据运动类型选择合适的参考坐标系 ***
-            
             # 计算世界坐标系下的速度
-            vel_world = delta_pos_world / time_span
+            vel_world = delta_pos_world / TIME_SPAN
             
             # *** 智能坐标变换：根据运动轨迹选择最佳参考坐标系 ***
             
-            # 在第一次循环中，我们还不知道整体运动模式，所以暂时用机器人朝向
-            # 这个选择会在下面的智能判断后被优化
-            start_time_index = i - past_frames
+            # 使用机器人朝向作为参考坐标系
+            start_time_index = i - PAST_FRAMES
             reference_quat = root_rot_quat[start_time_index]
             reference_rotation = scipyRot.from_quat(reference_quat)
             vel_local = reference_rotation.inv().apply(vel_world)
@@ -318,9 +246,9 @@ def compute_task_info(root_trans_offset, root_rot_quat, base_motion_flag):
             vel_x = vel_local[0]  # 前进/后退方向
             vel_y = vel_local[1]  # 左/右方向
             
-            # 计算角速度: (angle[t+7] - angle[t-2]) / (10/30)秒
-            past_yaw = compute_yaw_from_quaternion(root_rot_quat[i - past_frames])
-            future_yaw = compute_yaw_from_quaternion(root_rot_quat[i + future_frames])
+            # 计算角速度
+            past_yaw = compute_yaw_from_quaternion(root_rot_quat[i - PAST_FRAMES])
+            future_yaw = compute_yaw_from_quaternion(root_rot_quat[i + FUTURE_FRAMES])
             
             # 处理角度跳跃 (-π 到 π)
             delta_yaw = future_yaw - past_yaw
@@ -329,7 +257,7 @@ def compute_task_info(root_trans_offset, root_rot_quat, base_motion_flag):
             elif delta_yaw < -np.pi:
                 delta_yaw += 2 * np.pi
                 
-            vel_z = delta_yaw / time_span
+            vel_z = delta_yaw / TIME_SPAN
             
         else:
             # 对于前2帧和后7帧，无法计算完整的窗口信息，设为0
@@ -368,11 +296,11 @@ def compute_task_info(root_trans_offset, root_rot_quat, base_motion_flag):
             
             # 重新计算所有速度
             for i in range(len(root_trans_offset)):
-                if i >= past_frames and i + future_frames < len(root_trans_offset):
-                    future_pos = root_trans_offset[i + future_frames]
-                    past_pos = root_trans_offset[i - past_frames]
+                if i >= PAST_FRAMES and i + FUTURE_FRAMES < len(root_trans_offset):
+                    future_pos = root_trans_offset[i + FUTURE_FRAMES]
+                    past_pos = root_trans_offset[i - PAST_FRAMES]
                     delta_pos_world = future_pos - past_pos
-                    vel_world = delta_pos_world / time_span
+                    vel_world = delta_pos_world / TIME_SPAN
                     
                     # 使用轨迹坐标系
                     vel_local = trajectory_rotation.inv().apply(vel_world)
@@ -535,8 +463,7 @@ def process_motion(key_names, key_name_to_pkls, cfg):
         joints_dump[..., 2] -= height_diff
         
         root_trans_offset_np = root_trans_offset_dump.squeeze().detach().numpy()
-        fps = 30
-        root_trans_vel_np = np.diff(root_trans_offset_np, axis=0) * fps
+        root_trans_vel_np = np.diff(root_trans_offset_np, axis=0) * FPS
 
         root_trans_offset_np=root_trans_offset_np[:-1]
         dof_np = dof_pos_new.squeeze().detach().numpy()[:-1]
@@ -544,7 +471,6 @@ def process_motion(key_names, key_name_to_pkls, cfg):
         joints_np = joints_dump.copy()[:-1]
 
         lowest_height = np.min(joints_np[:,:,2])
-        gait_flag = np.ones_like(root_trans_offset_np[..., 2]) * motion_flag
         
         joints_np[..., 2] -= lowest_height
         root_trans_offset_np[..., 2] -= lowest_height
@@ -560,7 +486,7 @@ def process_motion(key_names, key_name_to_pkls, cfg):
             # 不截断，保持原始数据
         else:
             # 先在完整数据上计算task_info（这样有足够的前后帧）
-            task_info_full = compute_task_info(root_trans_offset_np, root_rot_np, motion_flag)
+            task_info_full = compute_task_info(root_trans_offset_np, root_rot_np, MOTION_FLAG)
             
             # 然后截断前2帧和后7帧（包括task_info）
             start_idx = 2  # 跳过前2帧
@@ -572,7 +498,6 @@ def process_motion(key_names, key_name_to_pkls, cfg):
             root_rot_np = root_rot_np[start_idx:end_idx]
             joints_np = joints_np[start_idx:end_idx]
             dof_increment = dof_increment[start_idx:end_idx]
-            gait_flag = gait_flag[start_idx:end_idx]
             
             # 截断task_info
             task_info = {
@@ -588,14 +513,13 @@ def process_motion(key_names, key_name_to_pkls, cfg):
                     "root_trans_offset": root_trans_offset_np,
                     # "pose_aa": pose_aa_robot_new.squeeze().detach().numpy(),
                     "root_height": root_trans_offset_np[...,2],
-                    "gait_flag": gait_flag,
                     # "root_trans_vel": root_trans_vel_np,
                     "dof": dof_np, 
                     "dof_increment": dof_increment,  
                     "default_joint_angles": default_joint_angles,  
                     "root_rot": root_rot_np,
                     "smpl_joints": joints_np, # 用于可视化
-                    "fps": fps
+                    "fps": FPS
                     }
         
         # 添加task_info到数据中
@@ -607,8 +531,6 @@ def process_motion(key_names, key_name_to_pkls, cfg):
         
 @hydra.main(version_base=None, config_path="../cfg", config_name="config")
 def main(cfg: DictConfig):
-    global motion_flag
-    motion_flag = 1
 
     amass_root = cfg.amass_path
     motion_name = os.path.basename(os.path.normpath(amass_root))

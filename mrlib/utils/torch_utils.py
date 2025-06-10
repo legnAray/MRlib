@@ -30,7 +30,7 @@ import numpy as np
 
 import torch
 from torch import nn
-from . import pytorch3d_transforms as ptr
+from . import rotation_conversions as ptr
 import torch.nn.functional as F
 
 

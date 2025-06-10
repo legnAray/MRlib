@@ -19,7 +19,7 @@ from mrlib.smpllib.smpl_parser import (
 from scipy.spatial.transform import Rotation as scipyRot
 import joblib
 from tqdm import tqdm
-from mrlib.utils.pytorch3d_transforms import axis_angle_to_matrix, fix_continous_dof
+from mrlib.utils.rotation_conversions import axis_angle_to_matrix, fix_continous_dof
 import hydra
 from hydra.utils import to_absolute_path
 from mrlib.smpllib.smpl_joint_names import SMPL_MUJOCO_NAMES, SMPL_BONE_ORDER_NAMES, SMPLH_BONE_ORDER_NAMES, SMPLH_MUJOCO_NAMES

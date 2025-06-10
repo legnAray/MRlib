@@ -1,7 +1,8 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
 
 # Distribution / packaging
 .Python
@@ -17,59 +18,22 @@ parts/
 sdist/
 var/
 wheels/
-pip-wheel-metadata/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
 
 # PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
 
 # Unit test / coverage reports
 htmlcov/
 .tox/
-.nox/
 .coverage
 .coverage.*
 .cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
 .pytest_cache/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -81,23 +45,6 @@ ipython_config.py
 # pyenv
 .python-version
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
 # Environments
 .env
 .venv
@@ -107,32 +54,21 @@ ENV/
 env.bak/
 venv.bak/
 
-# Spyder project settings
-.spyderproject
-.spyproject
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# 输出文件和结果
+# Project specific
 output/
 outputs/
 results/
 logs/
 wandb/
 
-# 大型数据集文件
+# Data files
 *.pkl
 *.npy
 *.npz
@@ -140,31 +76,30 @@ wandb/
 *.hdf5
 *.mat
 
-# SMPL模型文件 (这些通常是受版权保护的)
+# SMPL model files (copyright protected)
 smpl_models/
 SMPL_*/
-*.pkl  # SMPL模型文件
 **/SMPL*.pkl
 **/smpl*.pkl
 
-# 预训练模型和检查点
+# Model checkpoints
 checkpoints/
 *.pth
 *.pt
 *.ckpt
 *.model
 
-# 缓存文件
+# Cache
 .cache/
 *.cache
 cache/
 
-# Hydra输出
+# Hydra
 .hydra/
 hydra_outputs/
 multirun/
 
-# 可视化输出
+# Media files
 *.mp4
 *.avi
 *.gif
@@ -174,42 +109,15 @@ multirun/
 figures/
 plots/
 
-# 系统文件
+# System files
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
-# IDE设置
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# 临时文件
+# Temporary files
 tmp/
 temp/
 *.tmp
 *.temp
 
-# 配置文件中的敏感信息
-**/config_local.yaml
-**/secrets.yaml
-**/*_secret*
-
-# 大型模型权重文件
-*.safetensors
-*.bin
-*.msgpack
-
-# 数据预处理缓存
-preprocessing_cache/
-processed_data/
-
-# 测试输出
-test_output/
-test_results/ 
+# Local config files
+**/config_local.yaml 

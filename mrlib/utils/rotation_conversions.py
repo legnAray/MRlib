@@ -8,6 +8,8 @@ from typing import Optional, Union
 
 import torch
 import torch.nn.functional as F
+from typing import List, Optional
+import numpy as np
 
 def wxyz_to_xyzw(quat):
     return quat[..., [1, 2, 3, 0]]
@@ -55,6 +57,37 @@ def quaternion_to_matrix(quaternions: torch.Tensor) -> torch.Tensor:
         Rotation matrices as tensor of shape (..., 3, 3).
     """
     r, i, j, k = torch.unbind(quaternions, -1)
+    two_s = 2.0 / (quaternions * quaternions).sum(-1)
+
+    o = torch.stack(
+        (
+            1 - two_s * (j * j + k * k),
+            two_s * (i * j - k * r),
+            two_s * (i * k + j * r),
+            two_s * (i * j + k * r),
+            1 - two_s * (i * i + k * k),
+            two_s * (j * k - i * r),
+            two_s * (i * k - j * r),
+            two_s * (j * k + i * r),
+            1 - two_s * (i * i + j * j),
+        ),
+        -1,
+    )
+    return o.reshape(quaternions.shape[:-1] + (3, 3))
+
+
+def quaternion_to_matrix_ijkr(quaternions: torch.Tensor) -> torch.Tensor:
+    """
+    Convert rotations given as quaternions to rotation matrices.
+
+    Args:
+        quaternions: quaternions with real part first,
+            as tensor of shape (..., 4).
+
+    Returns:
+        Rotation matrices as tensor of shape (..., 3, 3).
+    """
+    i, j, k, r = torch.unbind(quaternions, -1)
     two_s = 2.0 / (quaternions * quaternions).sum(-1)
 
     o = torch.stack(
@@ -151,6 +184,51 @@ def matrix_to_quaternion(matrix: torch.Tensor) -> torch.Tensor:
 
     return quat_candidates[F.one_hot(q_abs.argmax(dim=-1), num_classes=4) > 0.5, :  # pyre-ignore[16]
                           ].reshape(batch_dim + (4,))
+
+
+@torch.jit.script
+def matrix_to_quaternion_ijkr(matrix: torch.Tensor) -> torch.Tensor:
+    """
+    x, y, z, w
+    Convert rotations given as rotation matrices to quaternions.
+
+    Args:
+        matrix: Rotation matrices as tensor of shape (..., 3, 3).
+
+    Returns:
+        quaternions with real part first, as tensor of shape (..., 4).
+    """
+    if matrix.size(-1) != 3 or matrix.size(-2) != 3:
+        raise ValueError(f"Invalid rotation matrix shape {matrix.shape}.")
+
+    batch_dim = matrix.shape[:-2]
+    m00, m01, m02, m10, m11, m12, m20, m21, m22 = torch.unbind(matrix.reshape(batch_dim + (9,)), dim=-1)
+
+    q_abs = _sqrt_positive_part(torch.stack(
+        [
+            1.0 + m00 - m11 - m22,
+            1.0 - m00 + m11 - m22,
+            1.0 - m00 - m11 + m22,
+            1.0 + m00 + m11 + m22,
+        ],
+        dim=-1,
+    ))
+
+    # we produce the desired quaternion multiplied by each of r, i, j, k
+    quat_by_ijkr = torch.stack(
+        [
+            torch.stack([q_abs[..., 0]**2, m10 + m01, m02 + m20, m21 - m12], dim=-1),
+            torch.stack([m10 + m01, q_abs[..., 1]**2, m21 + m12, m02 - m20], dim=-1),
+            torch.stack([m02 + m20, m12 + m21, q_abs[..., 2]**2, m10 - m01], dim=-1),
+            torch.stack([m21 - m12, m02 - m20, m10 - m01, q_abs[..., 3]**2], dim=-1),
+        ],
+        dim=-2,
+    )
+
+    flr = torch.tensor(0.1).to(dtype=q_abs.dtype, device=q_abs.device)
+    quat_candidates = quat_by_ijkr / (2.0 * q_abs[..., None].max(flr))
+
+    return quat_candidates[F.one_hot(q_abs.argmax(dim=-1), num_classes=4) > 0.5, :].reshape(batch_dim + (4,))  # pyre-ignore[16]
 
 
 def _axis_angle_rotation(axis: str, angle: torch.Tensor) -> torch.Tensor:
@@ -379,7 +457,7 @@ def quaternion_raw_multiply(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 def quaternion_multiply(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     """
     Multiply two quaternions representing rotations, returning the quaternion
-    representing their composition, i.e. the versor with nonnegative real part.
+    representing their composition, i.e. the versor with nonnegative real part.
     Usual torch rules for broadcasting apply.
 
     Args:
@@ -559,3 +637,138 @@ def matrix_to_rotation_6d(matrix: torch.Tensor) -> torch.Tensor:
     """
     batch_dim = matrix.size()[:-2]
     return matrix[..., :2, :].clone().reshape(batch_dim + (6,))
+
+
+########## The following functions are adapted from Poselib. 
+
+@torch.jit.script
+def quat_abs(x):
+    """
+    quaternion norm (unit quaternion represents a 3D rotation, which has norm of 1)
+    """
+    x = x.norm(p=2, dim=-1)
+    return x
+
+
+@torch.jit.script
+def quat_unit(x):
+    """
+    normalized quaternion with norm of 1
+    """
+    norm = quat_abs(x).unsqueeze(-1)
+    return x / (norm.clamp(min=1e-9))
+
+
+@torch.jit.script
+def quat_pos(x):
+    """
+    make all the real part of the quaternion positive
+    """
+    q = x
+    z = (q[..., 0:1] < 0).float()
+    q = (1 - 2 * z) * q
+    return q
+
+@torch.jit.script
+def quat_normalize(q):
+    """
+    Construct 3D rotation from quaternion (the quaternion needs not to be normalized).
+    """
+    q = quat_unit(quat_pos(q))  # normalized to positive and unit quaternion
+    return q
+
+
+@torch.jit.script
+def quat_identity(shape: List[int]):
+    """
+    Construct 3D identity rotation given shape
+    """
+    w = torch.ones(shape + [1])
+    xyz = torch.zeros(shape + [3])
+    q = torch.cat([w, xyz], dim=-1)
+    return quat_normalize(q)
+
+@torch.jit.script
+def quat_identity_like(x):
+    """
+    Construct identity 3D rotation with the same shape
+    """
+    return quat_identity(x.shape[:-1])
+
+@torch.jit.script
+def quat_conjugate(x):
+    """
+    quaternion with its imaginary part negated
+    """
+    return torch.cat([x[..., :1], -x[..., 1:]], dim=-1)
+
+@torch.jit.script
+def quat_inverse(x):
+    """
+    The inverse of the rotation
+    """
+    return quat_conjugate(x)
+
+@torch.jit.script
+def quat_mul(a, b):
+    """
+    quaternion multiplication
+    """
+    w1, x1, y1, z1 = a[..., 0], a[..., 1], a[..., 2], a[..., 3]
+    w2, x2, y2, z2 = b[..., 0], b[..., 1], b[..., 2], b[..., 3]
+
+    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+    y = w1 * y2 + y1 * w2 + z1 * x2 - x1 * z2
+    z = w1 * z2 + z1 * w2 + x1 * y2 - y1 * x2
+
+    return torch.stack([w, x, y, z], dim=-1)
+
+@torch.jit.script
+def quat_mul_norm(x, y):
+    """
+    Combine two set of 3D rotations together using \**\* operator. The shape needs to be
+    broadcastable
+    """
+    return quat_normalize(quat_mul(x, y))
+
+@torch.jit.script
+def quat_angle_axis(x):
+    """
+    The (angle, axis) representation of the rotation. The axis is normalized to unit length.
+    The angle is guaranteed to be between [0, pi].
+    """
+    s = 2 * (x[..., 0]**2) - 1
+    angle = s.clamp(-1, 1).arccos()  # just to be safe
+    axis = x[..., 1:]
+    axis /= axis.norm(p=2, dim=-1, keepdim=True).clamp(min=1e-10)
+    return angle, axis
+
+
+def fix_continous_dof(dof):
+    # This function is not perfect. For instance, it does not fix the wrap around problem.
+    assert(len(dof.shape) == 3) # B, J, 3
+    T = dof.shape[0] - 1
+    for t in range(1, T):
+        diff = dof[t] - dof[t-1]
+        times = 0
+        while diff.abs().max().item() >= 3:
+            change_joints = diff.abs().numpy().sum(axis = -1) >= 3
+            dof_change = dof[t][change_joints].clone()
+            dof_change[:, 0] = np.pi + dof_change[:, 0]
+            dof_change[:, 1] = np.pi - dof_change[:, 1]
+            dof_change[:, 2] = np.pi + dof_change[:, 2]
+            dof_change[dof_change > np.pi]  -= np.pi * 2
+            dof_change[dof_change < -np.pi] += np.pi * 2
+            dof[t][change_joints] = dof_change
+            diff = dof[t] - dof[t-1]
+            times += 1
+            if times > 1:
+                break
+                # raise NotImplementedError()
+                # import ipdb; ipdb.set_trace()
+                # print('....')
+                # (sRot.from_euler("XYZ", dof[t][change_joints][0]) * sRot.from_euler("XYZ", dof[t-1][change_joints][0]).inv()).as_rotvec()
+                
+                
+    return dof
