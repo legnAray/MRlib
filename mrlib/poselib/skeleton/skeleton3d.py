@@ -23,7 +23,7 @@ class SkeletonTree(Serializable):
     A skeleton tree gives a complete description of a rigid skeleton. It describes a tree structure
     over a list of nodes with their names indicated by strings. Each edge in the tree has a local
     translation associated with it which describes the distance between the two nodes that it
-    connects. 
+    connects.
 
     Basic Usage:
         >>> t = SkeletonTree.from_mjcf(SkeletonTree.__example_mjcf_path__)
@@ -71,7 +71,9 @@ class SkeletonTree(Serializable):
         'aux_1'
     """
 
-    __example_mjcf_path__ = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tests/ant.xml")
+    __example_mjcf_path__ = os.path.join(
+        os.path.dirname(os.path.realpath(__file__)), "tests/ant.xml"
+    )
 
     def __init__(self, node_names, parent_indices, local_translation):
         """
@@ -91,24 +93,26 @@ class SkeletonTree(Serializable):
         self._node_indices = {self.node_names[i]: i for i in range(len(self))}
 
     def __len__(self):
-        """ number of nodes in the skeleton tree """
+        """number of nodes in the skeleton tree"""
         return len(self.node_names)
 
     def __iter__(self):
-        """ iterator that iterate through the name of each node """
+        """iterator that iterate through the name of each node"""
         yield from self.node_names
 
     def __getitem__(self, item):
-        """ get the name of the node given the index """
+        """get the name of the node given the index"""
         return self.node_names[item]
 
     def __repr__(self):
-        return ("SkeletonTree(\n    node_names={},\n    parent_indices={},"
-                "\n    local_translation={}\n)".format(
-                    self._indent(repr(self.node_names)),
-                    self._indent(repr(self.parent_indices)),
-                    self._indent(repr(self.local_translation)),
-                ))
+        return (
+            "SkeletonTree(\n    node_names={},\n    parent_indices={},"
+            "\n    local_translation={}\n)".format(
+                self._indent(repr(self.node_names)),
+                self._indent(repr(self.parent_indices)),
+                self._indent(repr(self.local_translation)),
+            )
+        )
 
     def _indent(self, s):
         return "\n    ".join(s.split("\n"))
@@ -127,7 +131,7 @@ class SkeletonTree(Serializable):
 
     @property
     def num_joints(self):
-        """ number of nodes in the skeleton tree """
+        """number of nodes in the skeleton tree"""
         return len(self)
 
     @classmethod
@@ -139,18 +143,20 @@ class SkeletonTree(Serializable):
         )
 
     def to_dict(self):
-        return OrderedDict([
-            ("node_names", self.node_names),
-            ("parent_indices", tensor_to_dict(self.parent_indices)),
-            ("local_translation", tensor_to_dict(self.local_translation)),
-        ])
+        return OrderedDict(
+            [
+                ("node_names", self.node_names),
+                ("parent_indices", tensor_to_dict(self.parent_indices)),
+                ("local_translation", tensor_to_dict(self.local_translation)),
+            ]
+        )
 
     @classmethod
     def from_mjcf(cls, path: str) -> "SkeletonTree":
         """
         Parses a mujoco xml scene description file and returns a Skeleton Tree.
         We use the model attribute at the root as the name of the tree.
-        
+
         :param path:
         :type path: string
         :return: The skeleton tree constructed from the mjcf file
@@ -174,7 +180,9 @@ class SkeletonTree(Serializable):
         def _add_xml_node(xml_node, parent_index, node_index):
             node_name = xml_node.attrib.get("name")
             # parse the local translation into float list
-            pos = np.fromstring(xml_node.attrib.get("pos", "0 0 0"), dtype=float, sep=" ")
+            pos = np.fromstring(
+                xml_node.attrib.get("pos", "0 0 0"), dtype=float, sep=" "
+            )
             node_names.append(node_name)
             parent_indices.append(parent_index)
             local_translation.append(pos)
@@ -193,7 +201,7 @@ class SkeletonTree(Serializable):
         )
 
     def parent_of(self, node_name):
-        """ get the name of the parent of the given node
+        """get the name of the parent of the given node
 
         :param node_name: the name of the node
         :type node_name: string
@@ -202,18 +210,22 @@ class SkeletonTree(Serializable):
         return self[int(self.parent_indices[self.index(node_name)].item())]
 
     def index(self, node_name):
-        """ get the index of the node
-        
+        """get the index of the node
+
         :param node_name: the name of the node
         :type node_name: string
         :rtype: int
         """
         return self._node_indices[node_name]
 
-    def drop_nodes_by_names(self, node_names: List[str], pairwise_translation=None) -> "SkeletonTree":
+    def drop_nodes_by_names(
+        self, node_names: List[str], pairwise_translation=None
+    ) -> "SkeletonTree":
         new_length = len(self) - len(node_names)
         new_node_names = []
-        new_local_translation = torch.zeros(new_length, 3, dtype=self.local_translation.dtype)
+        new_local_translation = torch.zeros(
+            new_length, 3, dtype=self.local_translation.dtype
+        )
         new_parent_indices = torch.zeros(new_length, dtype=self.parent_indices.dtype)
         parent_indices = self.parent_indices.numpy()
         new_node_indices: dict = {}
@@ -230,7 +242,9 @@ class SkeletonTree(Serializable):
                 assert tb_node_index != -1, "the root node cannot be dropped"
 
                 if pairwise_translation is not None:
-                    local_translation = pairwise_translation[tb_node_index, node_index, :]
+                    local_translation = pairwise_translation[
+                        tb_node_index, node_index, :
+                    ]
             else:
                 local_translation = self.local_translation[node_index, :]
 
@@ -239,13 +253,17 @@ class SkeletonTree(Serializable):
             if tb_node_index == -1:
                 new_parent_indices[new_node_index] = -1
             else:
-                new_parent_indices[new_node_index] = new_node_indices[self[tb_node_index]]
+                new_parent_indices[new_node_index] = new_node_indices[
+                    self[tb_node_index]
+                ]
             new_node_indices[self[node_index]] = new_node_index
             new_node_index += 1
 
         return SkeletonTree(new_node_names, new_parent_indices, new_local_translation)
 
-    def keep_nodes_by_names(self, node_names: List[str], pairwise_translation=None) -> "SkeletonTree":
+    def keep_nodes_by_names(
+        self, node_names: List[str], pairwise_translation=None
+    ) -> "SkeletonTree":
         nodes_to_drop = list(filter(lambda x: x not in node_names, self))
         return self.drop_nodes_by_names(nodes_to_drop, pairwise_translation)
 
@@ -331,7 +349,9 @@ class SkeletonState(Serializable):
     @property
     def rotation(self):
         if not hasattr(self, "_rotation"):
-            self._rotation = self.tensor[..., :self.num_joints * 4].reshape(*(self.tensor.shape[:-1] + (self.num_joints, 4)))
+            self._rotation = self.tensor[..., : self.num_joints * 4].reshape(
+                *(self.tensor.shape[:-1] + (self.num_joints, 4))
+            )
         return self._rotation
 
     @property
@@ -350,8 +370,8 @@ class SkeletonState(Serializable):
 
     @property
     def is_local(self):
-        """ is the rotation represented in local frame? 
-        
+        """is the rotation represented in local frame?
+
         :rtype: bool
         """
         return self._is_local
@@ -362,33 +382,35 @@ class SkeletonState(Serializable):
 
     @property
     def num_joints(self):
-        """ number of joints in the skeleton tree 
-        
+        """number of joints in the skeleton tree
+
         :rtype: int
         """
         return self.skeleton_tree.num_joints
 
     @property
     def skeleton_tree(self):
-        """ skeleton tree 
-        
+        """skeleton tree
+
         :rtype: SkeletonTree
         """
         return self._skeleton_tree
 
     @property
     def root_translation(self):
-        """ root translation 
-        
+        """root translation
+
         :rtype: Tensor
         """
         if not hasattr(self, "_root_translation"):
-            self._root_translation = self.tensor[..., self.num_joints * 4:self.num_joints * 4 + 3]
+            self._root_translation = self.tensor[
+                ..., self.num_joints * 4 : self.num_joints * 4 + 3
+            ]
         return self._root_translation
 
     @property
     def global_transformation(self):
-        """ global transformation of each joint (transform from joint frame to global frame) """
+        """global transformation of each joint (transform from joint frame to global frame)"""
         # Forward Kinematics
         if not hasattr(self, "_global_transformation"):
             local_transformation = self.local_transformation
@@ -398,43 +420,49 @@ class SkeletonState(Serializable):
             for node_index in range(len(self.skeleton_tree)):
                 parent_index = parent_indices[node_index]
                 if parent_index == -1:
-                    global_transformation.append(local_transformation[..., node_index, :])
+                    global_transformation.append(
+                        local_transformation[..., node_index, :]
+                    )
                 else:
-                    global_transformation.append(transform_mul(
-                        global_transformation[parent_index],
-                        local_transformation[..., node_index, :],
-                    ))
+                    global_transformation.append(
+                        transform_mul(
+                            global_transformation[parent_index],
+                            local_transformation[..., node_index, :],
+                        )
+                    )
             self._global_transformation = torch.stack(global_transformation, axis=-2)
         return self._global_transformation
 
     @property
     def global_rotation(self):
-        """ global rotation of each joint (rotation matrix to rotate from joint's F.O.R to global
-        F.O.R) """
+        """global rotation of each joint (rotation matrix to rotate from joint's F.O.R to global
+        F.O.R)"""
         if self._global_rotation is None:
             if not hasattr(self, "_comp_global_rotation"):
-                self._comp_global_rotation = transform_rotation(self.global_transformation)
+                self._comp_global_rotation = transform_rotation(
+                    self.global_transformation
+                )
             return self._comp_global_rotation
         else:
             return self._global_rotation
 
     @property
     def global_translation(self):
-        """ global translation of each joint """
+        """global translation of each joint"""
         if not hasattr(self, "_global_translation"):
             self._global_translation = transform_translation(self.global_transformation)
         return self._global_translation
 
     @property
     def global_translation_xy(self):
-        """ global translation in xy """
+        """global translation in xy"""
         trans_xy_data = self.global_translation.zeros_like()
         trans_xy_data[..., 0:2] = self.global_translation[..., 0:2]
         return trans_xy_data
 
     @property
     def global_translation_xz(self):
-        """ global translation in xz """
+        """global translation in xz"""
         trans_xz_data = self.global_translation.zeros_like()
         trans_xz_data[..., 0:1] = self.global_translation[..., 0:1]
         trans_xz_data[..., 2:3] = self.global_translation[..., 2:3]
@@ -442,15 +470,17 @@ class SkeletonState(Serializable):
 
     @property
     def local_rotation(self):
-        """ the rotation from child frame to parent frame given in the order of child nodes appeared
-        in `.skeleton_tree.node_names` """
+        """the rotation from child frame to parent frame given in the order of child nodes appeared
+        in `.skeleton_tree.node_names`"""
         if self._local_rotation is None:
             if not hasattr(self, "_comp_local_rotation"):
                 local_rotation = quat_identity_like(self.global_rotation)
                 for node_index in range(len(self.skeleton_tree)):
                     parent_index = self.skeleton_tree.parent_indices[node_index]
                     if parent_index == -1:
-                        local_rotation[..., node_index, :] = self.global_rotation[..., node_index, :]
+                        local_rotation[..., node_index, :] = self.global_rotation[
+                            ..., node_index, :
+                        ]
                     else:
                         local_rotation[..., node_index, :] = quat_mul_norm(
                             quat_inverse(self.global_rotation[..., parent_index, :]),
@@ -463,20 +493,29 @@ class SkeletonState(Serializable):
 
     @property
     def local_transformation(self):
-        """ local translation + local rotation. It describes the transformation from child frame to 
-        parent frame given in the order of child nodes appeared in `.skeleton_tree.node_names` """
+        """local translation + local rotation. It describes the transformation from child frame to
+        parent frame given in the order of child nodes appeared in `.skeleton_tree.node_names`
+        """
         if not hasattr(self, "_local_transformation"):
-            self._local_transformation = transform_from_rotation_translation(r=self.local_rotation, t=self.local_translation)
+            self._local_transformation = transform_from_rotation_translation(
+                r=self.local_rotation, t=self.local_translation
+            )
         return self._local_transformation
 
     @property
     def local_translation(self):
-        """ local translation of the skeleton state. It is identical to the local translation in
+        """local translation of the skeleton state. It is identical to the local translation in
         `.skeleton_tree.local_translation` except the root translation. The root translation is
-        identical to `.root_translation` """
+        identical to `.root_translation`"""
         if not hasattr(self, "_local_translation"):
-            broadcast_shape = (tuple(self.tensor.shape[:-1]) + (len(self.skeleton_tree),) + tuple(self.skeleton_tree.local_translation.shape[-1:]))
-            local_translation = self.skeleton_tree.local_translation.broadcast_to(*broadcast_shape).clone()
+            broadcast_shape = (
+                tuple(self.tensor.shape[:-1])
+                + (len(self.skeleton_tree),)
+                + tuple(self.skeleton_tree.local_translation.shape[-1:])
+            )
+            local_translation = self.skeleton_tree.local_translation.broadcast_to(
+                *broadcast_shape
+            ).clone()
             local_translation[..., 0, :] = self.root_translation
             self._local_translation = local_translation
         return self._local_translation
@@ -484,21 +523,21 @@ class SkeletonState(Serializable):
     # Root Properties
     @property
     def root_translation_xy(self):
-        """ root translation on xy """
+        """root translation on xy"""
         if not hasattr(self, "_root_translation_xy"):
             self._root_translation_xy = self.global_translation_xy[..., 0, :]
         return self._root_translation_xy
 
     @property
     def global_root_rotation(self):
-        """ root rotation """
+        """root rotation"""
         if not hasattr(self, "_global_root_rotation"):
             self._global_root_rotation = self.global_rotation[..., 0, :]
         return self._global_root_rotation
 
     @property
     def global_root_yaw_rotation(self):
-        """ root yaw rotation """
+        """root yaw rotation"""
         if not hasattr(self, "_global_root_yaw_rotation"):
             self._global_root_yaw_rotation = self.global_root_rotation.yaw_rotation()
         return self._global_root_yaw_rotation
@@ -506,16 +545,20 @@ class SkeletonState(Serializable):
     # Properties relative to root
     @property
     def local_translation_to_root(self):
-        """ The 3D translation from joint frame to the root frame. """
+        """The 3D translation from joint frame to the root frame."""
         if not hasattr(self, "_local_translation_to_root"):
-            self._local_translation_to_root = (self.global_translation - self.root_translation.unsqueeze(-1))
+            self._local_translation_to_root = (
+                self.global_translation - self.root_translation.unsqueeze(-1)
+            )
         return self._local_translation_to_root
 
     @property
     def local_rotation_to_root(self):
-        """ The 3D rotation from joint frame to the root frame. It is equivalent to 
-        The root_R_world * world_R_node """
-        return (quat_inverse(self.global_root_rotation).unsqueeze(-1) * self.global_rotation)
+        """The 3D rotation from joint frame to the root frame. It is equivalent to
+        The root_R_world * world_R_node"""
+        return (
+            quat_inverse(self.global_root_rotation).unsqueeze(-1) * self.global_rotation
+        )
 
     def compute_forward_vector(
         self,
@@ -525,21 +568,33 @@ class SkeletonState(Serializable):
         right_hip_index,
         gaussian_filter_width=20,
     ):
-        """ Computes forward vector based on cross product of the up vector with 
-        average of the right->left shoulder and hip vectors """
+        """Computes forward vector based on cross product of the up vector with
+        average of the right->left shoulder and hip vectors"""
         global_positions = self.global_translation
         # Perpendicular to the forward direction.
         # Uses the shoulders and hips to find this.
-        side_direction = (global_positions[:, left_shoulder_index].numpy() - global_positions[:, right_shoulder_index].numpy() + global_positions[:, left_hip_index].numpy() - global_positions[:, right_hip_index].numpy())
-        side_direction = (side_direction / np.sqrt((side_direction**2).sum(axis=-1))[..., np.newaxis])
+        side_direction = (
+            global_positions[:, left_shoulder_index].numpy()
+            - global_positions[:, right_shoulder_index].numpy()
+            + global_positions[:, left_hip_index].numpy()
+            - global_positions[:, right_hip_index].numpy()
+        )
+        side_direction = (
+            side_direction / np.sqrt((side_direction**2).sum(axis=-1))[..., np.newaxis]
+        )
 
         # Forward direction obtained by crossing with the up direction.
         forward_direction = np.cross(side_direction, np.array([[0, 1, 0]]))
 
         # Smooth the forward direction with a Gaussian.
         # Axis 0 is the time/frame axis.
-        forward_direction = filters.gaussian_filter1d(forward_direction, gaussian_filter_width, axis=0, mode="nearest")
-        forward_direction = (forward_direction / np.sqrt((forward_direction**2).sum(axis=-1))[..., np.newaxis])
+        forward_direction = filters.gaussian_filter1d(
+            forward_direction, gaussian_filter_width, axis=0, mode="nearest"
+        )
+        forward_direction = (
+            forward_direction
+            / np.sqrt((forward_direction**2).sum(axis=-1))[..., np.newaxis]
+        )
 
         return torch.from_numpy(forward_direction)
 
@@ -547,12 +602,16 @@ class SkeletonState(Serializable):
     def _to_state_vector(rot, rt):
         state_shape = rot.shape[:-2]
         vr = rot.reshape(*(state_shape + (-1,)))
-        vt = rt.broadcast_to(*state_shape + rt.shape[-1:]).reshape(*(state_shape + (-1,)))
+        vt = rt.broadcast_to(*state_shape + rt.shape[-1:]).reshape(
+            *(state_shape + (-1,))
+        )
         v = torch.cat([vr, vt], axis=-1)
         return v
 
     @classmethod
-    def from_dict(cls: Type["SkeletonState"], dict_repr: OrderedDict, *args, **kwargs) -> "SkeletonState":
+    def from_dict(
+        cls: Type["SkeletonState"], dict_repr: OrderedDict, *args, **kwargs
+    ) -> "SkeletonState":
         rot = TensorUtils.from_dict(dict_repr["rotation"], *args, **kwargs)
         rt = TensorUtils.from_dict(dict_repr["root_translation"], *args, **kwargs)
         return cls(
@@ -562,12 +621,14 @@ class SkeletonState(Serializable):
         )
 
     def to_dict(self) -> OrderedDict:
-        return OrderedDict([
-            ("rotation", tensor_to_dict(self.rotation)),
-            ("root_translation", tensor_to_dict(self.root_translation)),
-            ("skeleton_tree", self.skeleton_tree.to_dict()),
-            ("is_local", self.is_local),
-        ])
+        return OrderedDict(
+            [
+                ("rotation", tensor_to_dict(self.rotation)),
+                ("root_translation", tensor_to_dict(self.root_translation)),
+                ("skeleton_tree", self.skeleton_tree.to_dict()),
+                ("is_local", self.is_local),
+            ]
+        )
 
     @classmethod
     def from_rotation_and_root_translation(cls, skeleton_tree, r, t, is_local=True):
@@ -583,7 +644,9 @@ class SkeletonState(Serializable):
         :param is_local: to indicate that whether the rotation is local or global
         :type is_local: bool, optional, default=True
         """
-        assert (r.dim() > 0), "the rotation needs to have at least 1 dimension (dim = {})".format(r.dim)
+        assert (
+            r.dim() > 0
+        ), "the rotation needs to have at least 1 dimension (dim = {})".format(r.dim)
         state_vec = SkeletonState._to_state_vector(r, t)
 
         return cls(
@@ -609,9 +672,9 @@ class SkeletonState(Serializable):
         )
 
     def local_repr(self):
-        """ 
+        """
         Convert the skeleton state into local representation. This will only affects the values of
-        .tensor. If the skeleton state already has `is_local=True`. This method will do nothing. 
+        .tensor. If the skeleton state already has `is_local=True`. This method will do nothing.
 
         :rtype: SkeletonState
         """
@@ -625,9 +688,9 @@ class SkeletonState(Serializable):
         )
 
     def global_repr(self):
-        """ 
+        """
         Convert the skeleton state into global representation. This will only affects the values of
-        .tensor. If the skeleton state already has `is_local=False`. This method will do nothing. 
+        .tensor. If the skeleton state already has `is_local=False`. This method will do nothing.
 
         :rtype: SkeletonState
         """
@@ -645,7 +708,11 @@ class SkeletonState(Serializable):
         p1 = global_transform_inv.unsqueeze(-2)
         p2 = self.global_transformation.unsqueeze(-3)
 
-        pairwise_translation = (transform_translation(transform_mul(p1, p2)).reshape(-1, len(self.skeleton_tree), len(self.skeleton_tree), 3).mean(axis=0))
+        pairwise_translation = (
+            transform_translation(transform_mul(p1, p2))
+            .reshape(-1, len(self.skeleton_tree), len(self.skeleton_tree), 3)
+            .mean(axis=0)
+        )
         return pairwise_translation
 
     def _transfer_to(self, new_skeleton_tree: SkeletonTree):
@@ -657,7 +724,9 @@ class SkeletonState(Serializable):
             is_local=False,
         )
 
-    def drop_nodes_by_names(self, node_names: List[str], estimate_local_translation_from_states: bool = True) -> "SkeletonState":
+    def drop_nodes_by_names(
+        self, node_names: List[str], estimate_local_translation_from_states: bool = True
+    ) -> "SkeletonState":
         """ 
         Drop a list of nodes from the skeleton and re-compute the local rotation to match the 
         original joint position as much as possible. 
@@ -673,10 +742,14 @@ class SkeletonState(Serializable):
             pairwise_translation = self._get_pairwise_average_translation()
         else:
             pairwise_translation = None
-        new_skeleton_tree = self.skeleton_tree.drop_nodes_by_names(node_names, pairwise_translation)
+        new_skeleton_tree = self.skeleton_tree.drop_nodes_by_names(
+            node_names, pairwise_translation
+        )
         return self._transfer_to(new_skeleton_tree)
 
-    def keep_nodes_by_names(self, node_names: List[str], estimate_local_translation_from_states: bool = True) -> "SkeletonState":
+    def keep_nodes_by_names(
+        self, node_names: List[str], estimate_local_translation_from_states: bool = True
+    ) -> "SkeletonState":
         """ 
         Keep a list of nodes and drop all other nodes from the skeleton and re-compute the local 
         rotation to match the original joint position as much as possible. 
@@ -693,19 +766,27 @@ class SkeletonState(Serializable):
             estimate_local_translation_from_states,
         )
 
-    def _remapped_to(self, joint_mapping: Dict[str, str], target_skeleton_tree: SkeletonTree):
+    def _remapped_to(
+        self, joint_mapping: Dict[str, str], target_skeleton_tree: SkeletonTree
+    ):
         joint_mapping_inv = {target: source for source, target in joint_mapping.items()}
-        reduced_target_skeleton_tree = target_skeleton_tree.keep_nodes_by_names(list(joint_mapping_inv))
+        reduced_target_skeleton_tree = target_skeleton_tree.keep_nodes_by_names(
+            list(joint_mapping_inv)
+        )
         n_joints = (
             len(joint_mapping),
             len(self.skeleton_tree),
             len(reduced_target_skeleton_tree),
         )
-        assert (len(set(n_joints)) == 1), "the joint mapping is not consistent with the skeleton trees"
-        source_indices = list(map(
-            lambda x: self.skeleton_tree.index(joint_mapping_inv[x]),
-            reduced_target_skeleton_tree,
-        ))
+        assert (
+            len(set(n_joints)) == 1
+        ), "the joint mapping is not consistent with the skeleton trees"
+        source_indices = list(
+            map(
+                lambda x: self.skeleton_tree.index(joint_mapping_inv[x]),
+                reduced_target_skeleton_tree,
+            )
+        )
         target_local_rotation = self.local_rotation[..., source_indices, :]
         return SkeletonState.from_rotation_and_root_translation(
             skeleton_tree=reduced_target_skeleton_tree,
@@ -798,7 +879,9 @@ class SkeletonState(Serializable):
         # STEP 1: Drop the irrelevant joints
         pairwise_translation = self._get_pairwise_average_translation()
         node_names = list(joint_mapping)
-        new_skeleton_tree = self.skeleton_tree.keep_nodes_by_names(node_names, pairwise_translation)
+        new_skeleton_tree = self.skeleton_tree.keep_nodes_by_names(
+            node_names, pairwise_translation
+        )
 
         # TODO: combine the following steps before STEP 3
         source_tpose = source_tpose._transfer_to(new_skeleton_tree)
@@ -809,7 +892,9 @@ class SkeletonState(Serializable):
 
         # STEP 2: Rotate the source to align with the target
         new_local_rotation = source_tpose.local_rotation.clone()
-        new_local_rotation[..., 0, :] = quat_mul_norm(rotation_to_target_skeleton, source_tpose.local_rotation[..., 0, :])
+        new_local_rotation[..., 0, :] = quat_mul_norm(
+            rotation_to_target_skeleton, source_tpose.local_rotation[..., 0, :]
+        )
 
         source_tpose = SkeletonState.from_rotation_and_root_translation(
             skeleton_tree=source_tpose.skeleton_tree,
@@ -819,7 +904,9 @@ class SkeletonState(Serializable):
         )
 
         new_local_rotation = source_state.local_rotation.clone()
-        new_local_rotation[..., 0, :] = quat_mul_norm(rotation_to_target_skeleton, source_state.local_rotation[..., 0, :])
+        new_local_rotation[..., 0, :] = quat_mul_norm(
+            rotation_to_target_skeleton, source_state.local_rotation[..., 0, :]
+        )
         source_state = SkeletonState.from_rotation_and_root_translation(
             skeleton_tree=source_state.skeleton_tree,
             r=new_local_rotation,
@@ -828,7 +915,9 @@ class SkeletonState(Serializable):
         )
 
         # STEP 3: Normalize to match the target scale
-        root_translation_diff = (source_state.root_translation - source_tpose.root_translation) * scale_to_target_skeleton
+        root_translation_diff = (
+            source_state.root_translation - source_tpose.root_translation
+        ) * scale_to_target_skeleton
 
         # STEP 4: the global rotation from source state relative to source tpose and
         # re-apply to the target
@@ -836,10 +925,18 @@ class SkeletonState(Serializable):
         target_tpose_global_rotation = source_state.global_rotation[0, :].clone()
         for current_index, name in enumerate(current_skeleton_tree):
             if name in target_tpose.skeleton_tree:
-                target_tpose_global_rotation[current_index, :] = target_tpose.global_rotation[target_tpose.skeleton_tree.index(name), :]
+                target_tpose_global_rotation[current_index, :] = (
+                    target_tpose.global_rotation[
+                        target_tpose.skeleton_tree.index(name), :
+                    ]
+                )
 
-        global_rotation_diff = quat_mul_norm(source_state.global_rotation, quat_inverse(source_tpose.global_rotation))
-        new_global_rotation = quat_mul_norm(global_rotation_diff, target_tpose_global_rotation)
+        global_rotation_diff = quat_mul_norm(
+            source_state.global_rotation, quat_inverse(source_tpose.global_rotation)
+        )
+        new_global_rotation = quat_mul_norm(
+            global_rotation_diff, target_tpose_global_rotation
+        )
 
         # STEP 5: Putting 3 and 4 together
         current_skeleton_tree = source_state.skeleton_tree
@@ -850,7 +947,9 @@ class SkeletonState(Serializable):
             while name not in current_skeleton_tree:
                 name = target_skeleton_tree.parent_of(name)
             parent_index = current_skeleton_tree.index(name)
-            new_global_rotation_output[:, current_index, :] = new_global_rotation[:, parent_index, :]
+            new_global_rotation_output[:, current_index, :] = new_global_rotation[
+                :, parent_index, :
+            ]
 
         source_state = SkeletonState.from_rotation_and_root_translation(
             skeleton_tree=target_skeleton_tree,
@@ -894,7 +993,9 @@ class SkeletonState(Serializable):
         :type scale_to_target_skeleton: float
         :rtype: SkeletonState
         """
-        assert (len(source_tpose.shape) == 0 and len(target_tpose.shape) == 0), "the retargeting script currently doesn't support vectorized operations"
+        assert (
+            len(source_tpose.shape) == 0 and len(target_tpose.shape) == 0
+        ), "the retargeting script currently doesn't support vectorized operations"
         return self.retarget_to(
             joint_mapping,
             source_tpose.local_rotation,
@@ -914,7 +1015,9 @@ class SkeletonMotion(SkeletonState):
         super().__init__(tensor_backend, skeleton_tree, is_local, *args, **kwargs)
 
     def clone(self):
-        return SkeletonMotion(self.tensor.clone(), self.skeleton_tree, self._is_local, self._fps)
+        return SkeletonMotion(
+            self.tensor.clone(), self.skeleton_tree, self._is_local, self._fps
+        )
 
     @property
     def invariant_property(self):
@@ -926,34 +1029,38 @@ class SkeletonMotion(SkeletonState):
 
     @property
     def global_velocity(self):
-        """ global velocity """
+        """global velocity"""
         curr_index = self.num_joints * 4 + 3
-        return self.tensor[..., curr_index:curr_index + self.num_joints * 3].reshape(*(self.tensor.shape[:-1] + (self.num_joints, 3)))
+        return self.tensor[..., curr_index : curr_index + self.num_joints * 3].reshape(
+            *(self.tensor.shape[:-1] + (self.num_joints, 3))
+        )
 
     @property
     def global_angular_velocity(self):
-        """ global angular velocity """
+        """global angular velocity"""
         curr_index = self.num_joints * 7 + 3
-        return self.tensor[..., curr_index:curr_index + self.num_joints * 3].reshape(*(self.tensor.shape[:-1] + (self.num_joints, 3)))
+        return self.tensor[..., curr_index : curr_index + self.num_joints * 3].reshape(
+            *(self.tensor.shape[:-1] + (self.num_joints, 3))
+        )
 
     @property
     def fps(self):
-        """ number of frames per second """
+        """number of frames per second"""
         return self._fps
 
     @property
     def time_delta(self):
-        """ time between two adjacent frames """
+        """time between two adjacent frames"""
         return 1.0 / self.fps
 
     @property
     def global_root_velocity(self):
-        """ global root velocity """
+        """global root velocity"""
         return self.global_velocity[..., 0, :]
 
     @property
     def global_root_angular_velocity(self):
-        """ global root angular velocity """
+        """global root angular velocity"""
         return self.global_angular_velocity[..., 0, :]
 
     @classmethod
@@ -970,7 +1077,7 @@ class SkeletonMotion(SkeletonState):
         Construct a skeleton motion from a skeleton state vector, global velocity and angular
         velocity at each joint.
 
-        :param skeleton_tree: the skeleton tree that the motion is based on 
+        :param skeleton_tree: the skeleton tree that the motion is based on
         :type skeleton_tree: SkeletonTree
         :param state_vector: the state vector from the skeleton state by `.tensor`
         :type state_vector: Tensor
@@ -997,21 +1104,29 @@ class SkeletonMotion(SkeletonState):
         )
 
     @classmethod
-    def from_skeleton_state(cls: Type["SkeletonMotion"], skeleton_state: SkeletonState, fps: int):
+    def from_skeleton_state(
+        cls: Type["SkeletonMotion"], skeleton_state: SkeletonState, fps: int
+    ):
         """
         Construct a skeleton motion from a skeleton state. The velocities are estimated using second
         order guassian filter along the last axis. The skeleton state must have at least .dim >= 1
 
-        :param skeleton_state: the skeleton state that the motion is based on 
+        :param skeleton_state: the skeleton state that the motion is based on
         :type skeleton_state: SkeletonState
         :param fps: number of frames per second
         :type fps: int
 
         :rtype: SkeletonMotion
         """
-        assert (type(skeleton_state) == SkeletonState), "expected type of {}, got {}".format(SkeletonState, type(skeleton_state))
-        global_velocity = SkeletonMotion._compute_velocity(p=skeleton_state.global_translation, time_delta=1 / fps)
-        global_angular_velocity = SkeletonMotion._compute_angular_velocity(r=skeleton_state.global_rotation, time_delta=1 / fps)
+        assert (
+            type(skeleton_state) == SkeletonState
+        ), "expected type of {}, got {}".format(SkeletonState, type(skeleton_state))
+        global_velocity = SkeletonMotion._compute_velocity(
+            p=skeleton_state.global_translation, time_delta=1 / fps
+        )
+        global_angular_velocity = SkeletonMotion._compute_angular_velocity(
+            r=skeleton_state.global_rotation, time_delta=1 / fps
+        )
         return cls.from_state_vector_and_velocity(
             skeleton_tree=skeleton_state.skeleton_tree,
             state_vector=skeleton_state.tensor,
@@ -1031,34 +1146,47 @@ class SkeletonMotion(SkeletonState):
         return skeleton_motion_v
 
     @classmethod
-    def from_dict(cls: Type["SkeletonMotion"], dict_repr: OrderedDict, *args, **kwargs) -> "SkeletonMotion":
+    def from_dict(
+        cls: Type["SkeletonMotion"], dict_repr: OrderedDict, *args, **kwargs
+    ) -> "SkeletonMotion":
         rot = TensorUtils.from_dict(dict_repr["rotation"], *args, **kwargs)
         rt = TensorUtils.from_dict(dict_repr["root_translation"], *args, **kwargs)
         vel = TensorUtils.from_dict(dict_repr["global_velocity"], *args, **kwargs)
-        avel = TensorUtils.from_dict(dict_repr["global_angular_velocity"], *args, **kwargs)
+        avel = TensorUtils.from_dict(
+            dict_repr["global_angular_velocity"], *args, **kwargs
+        )
         return cls(
             SkeletonMotion._to_state_vector(rot, rt, vel, avel),
-            skeleton_tree=SkeletonTree.from_dict(dict_repr["skeleton_tree"], *args, **kwargs),
+            skeleton_tree=SkeletonTree.from_dict(
+                dict_repr["skeleton_tree"], *args, **kwargs
+            ),
             is_local=dict_repr["is_local"],
             fps=dict_repr["fps"],
         )
 
     def to_dict(self) -> OrderedDict:
-        return OrderedDict([
-            ("rotation", tensor_to_dict(self.rotation)),
-            ("root_translation", tensor_to_dict(self.root_translation)),
-            ("global_velocity", tensor_to_dict(self.global_velocity)),
-            ("global_angular_velocity", tensor_to_dict(self.global_angular_velocity)),
-            ("skeleton_tree", self.skeleton_tree.to_dict()),
-            ("is_local", self.is_local),
-            ("fps", self.fps),
-        ])
+        return OrderedDict(
+            [
+                ("rotation", tensor_to_dict(self.rotation)),
+                ("root_translation", tensor_to_dict(self.root_translation)),
+                ("global_velocity", tensor_to_dict(self.global_velocity)),
+                (
+                    "global_angular_velocity",
+                    tensor_to_dict(self.global_angular_velocity),
+                ),
+                ("skeleton_tree", self.skeleton_tree.to_dict()),
+                ("is_local", self.is_local),
+                ("fps", self.fps),
+            ]
+        )
 
     @staticmethod
     def _compute_velocity(p, time_delta, guassian_filter=True):
         velocity = np.gradient(p.numpy(), axis=-3) / time_delta
         if guassian_filter:
-            velocity = torch.from_numpy(filters.gaussian_filter1d(velocity, 2, axis=-3, mode="nearest")).to(p)
+            velocity = torch.from_numpy(
+                filters.gaussian_filter1d(velocity, 2, axis=-3, mode="nearest")
+            ).to(p)
         else:
             velocity = torch.from_numpy(velocity).to(p)
 
@@ -1068,18 +1196,24 @@ class SkeletonMotion(SkeletonState):
     def _compute_angular_velocity(r, time_delta: float, guassian_filter=True):
         # assume the second last dimension is the time axis
         diff_quat_data = quat_identity_like(r).to(r)
-        diff_quat_data[..., :-1, :, :] = quat_mul_norm(r[..., 1:, :, :], quat_inverse(r[..., :-1, :, :]))
+        diff_quat_data[..., :-1, :, :] = quat_mul_norm(
+            r[..., 1:, :, :], quat_inverse(r[..., :-1, :, :])
+        )
         diff_angle, diff_axis = quat_angle_axis(diff_quat_data)
         angular_velocity = diff_axis * diff_angle.unsqueeze(-1) / time_delta
         if guassian_filter:
-            angular_velocity = torch.from_numpy(filters.gaussian_filter1d(angular_velocity.numpy(), 2, axis=-3, mode="nearest"),)
+            angular_velocity = torch.from_numpy(
+                filters.gaussian_filter1d(
+                    angular_velocity.numpy(), 2, axis=-3, mode="nearest"
+                ),
+            )
         return angular_velocity
 
     def crop(self, start: int, end: int, fps: Optional[int] = None):
         """
         Crop the motion along its last axis. This is equivalent to performing a slicing on the
         object with [..., start: end: skip_every] where skip_every = old_fps / fps. Note that the
-        new fps provided must be a factor of the original fps. 
+        new fps provided must be a factor of the original fps.
 
         :param start: the beginning frame index
         :type start: int
@@ -1095,8 +1229,10 @@ class SkeletonMotion(SkeletonState):
         else:
             new_fps = int(fps)
             old_fps = int(self.fps)
-            assert old_fps % fps == 0, ("the resampling doesn't support fps with non-integer division "
-                                        "from the original fps: {} => {}".format(old_fps, fps))
+            assert old_fps % fps == 0, (
+                "the resampling doesn't support fps with non-integer division "
+                "from the original fps: {} => {}".format(old_fps, fps)
+            )
         skip_every = old_fps // new_fps
         s = slice(start, end, skip_every)
         z = self[..., s]

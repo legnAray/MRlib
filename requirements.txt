@@ -13,7 +13,7 @@ omegaconf>=2.1.0
 pyyaml>=5.4.0
 
 # 数据处理和I/O
-joblib>=1.0.0
+# joblib>=1.0.0  # 不再需要，已替换为Python标准库pickle
 tqdm>=4.60.0
 easydict>=1.9.0
 

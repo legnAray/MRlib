@@ -15,7 +15,7 @@ import torch
 class TensorUtils(Serializable):
     @classmethod
     def from_dict(cls, dict_repr, *args, **kwargs):
-        """ Read the object from an ordered dictionary
+        """Read the object from an ordered dictionary
 
         :param dict_repr: the ordered dictionary that is used to construct the object
         :type dict_repr: OrderedDict
@@ -25,21 +25,17 @@ class TensorUtils(Serializable):
         return torch.from_numpy(dict_repr["arr"].astype(dict_repr["context"]["dtype"]))
 
     def to_dict(self):
-        """ Construct an ordered dictionary from the object
-        
+        """Construct an ordered dictionary from the object
+
         :rtype: OrderedDict
         """
         return NotImplemented
 
+
 def tensor_to_dict(x):
-    """ Construct an ordered dictionary from the object
-    
+    """Construct an ordered dictionary from the object
+
     :rtype: OrderedDict
     """
     x_np = x.numpy()
-    return {
-        "arr": x_np,
-        "context": {
-            "dtype": x_np.dtype.name
-        }
-    }
+    return {"arr": x_np, "context": {"dtype": x_np.dtype.name}}

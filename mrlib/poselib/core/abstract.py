@@ -31,7 +31,7 @@ def _get_cls(name):
 
 
 class NumpyEncoder(json.JSONEncoder):
-    """ Special json encoder for numpy types """
+    """Special json encoder for numpy types"""
 
     def default(self, obj):
         if isinstance(
@@ -66,14 +66,14 @@ def json_numpy_obj_hook(dct):
 
 
 class Serializable:
-    """ Implementation to read/write to file.
-    All class the is inherited from this class needs to implement to_dict() and 
+    """Implementation to read/write to file.
+    All class the is inherited from this class needs to implement to_dict() and
     from_dict()
     """
 
     @abstractclassmethod
     def from_dict(cls, dict_repr, *args, **kwargs):
-        """ Read the object from an ordered dictionary
+        """Read the object from an ordered dictionary
 
         :param dict_repr: the ordered dictionary that is used to construct the object
         :type dict_repr: OrderedDict
@@ -84,15 +84,15 @@ class Serializable:
 
     @abstractmethod
     def to_dict(self):
-        """ Construct an ordered dictionary from the object
-        
+        """Construct an ordered dictionary from the object
+
         :rtype: OrderedDict
         """
         pass
 
     @classmethod
     def from_file(cls, path, *args, **kwargs):
-        """ Read the object from a file (either .npy or .json)
+        """Read the object from a file (either .npy or .json)
 
         :param path: path of the file
         :type path: string
@@ -112,7 +112,7 @@ class Serializable:
         return cls.from_dict(d, *args, **kwargs)
 
     def to_file(self, path: str) -> None:
-        """ Write the object to a file (either .npy or .json)
+        """Write the object to a file (either .npy or .json)
 
         :param path: path of the file
         :type path: string

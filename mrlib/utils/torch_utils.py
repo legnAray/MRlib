@@ -34,7 +34,6 @@ from . import rotation_conversions as ptr
 import torch.nn.functional as F
 
 
-
 @torch.jit.script
 def quat_mul(a, b):
     assert a.shape == b.shape
@@ -79,11 +78,13 @@ def quat_rotate(q, v):
     shape = q.shape
     q_w = q[:, -1]
     q_vec = q[:, :3]
-    a = v * (2.0 * q_w ** 2 - 1.0).unsqueeze(-1)
+    a = v * (2.0 * q_w**2 - 1.0).unsqueeze(-1)
     b = torch.cross(q_vec, v, dim=-1) * q_w.unsqueeze(-1) * 2.0
-    c = q_vec * \
-        torch.bmm(q_vec.view(shape[0], 1, 3), v.view(
-            shape[0], 3, 1)).squeeze(-1) * 2.0
+    c = (
+        q_vec
+        * torch.bmm(q_vec.view(shape[0], 1, 3), v.view(shape[0], 3, 1)).squeeze(-1)
+        * 2.0
+    )
     return a + b + c
 
 
@@ -92,11 +93,13 @@ def quat_rotate_inverse(q, v):
     shape = q.shape
     q_w = q[:, -1]
     q_vec = q[:, :3]
-    a = v * (2.0 * q_w ** 2 - 1.0).unsqueeze(-1)
+    a = v * (2.0 * q_w**2 - 1.0).unsqueeze(-1)
     b = torch.cross(q_vec, v, dim=-1) * q_w.unsqueeze(-1) * 2.0
-    c = q_vec * \
-        torch.bmm(q_vec.view(shape[0], 1, 3), v.view(
-            shape[0], 3, 1)).squeeze(-1) * 2.0
+    c = (
+        q_vec
+        * torch.bmm(q_vec.view(shape[0], 1, 3), v.view(shape[0], 3, 1)).squeeze(-1)
+        * 2.0
+    )
     return a - b + c
 
 
@@ -151,13 +154,12 @@ def get_basis_vector(q, v):
     return quat_rotate(q, v)
 
 
-def get_axis_params(value, axis_idx, x_value=0., dtype=np.float32, n_dims=3):
-    """construct arguments to `Vec` according to axis index.
-    """
+def get_axis_params(value, axis_idx, x_value=0.0, dtype=np.float32, n_dims=3):
+    """construct arguments to `Vec` according to axis index."""
     zs = np.zeros((n_dims,))
     assert axis_idx < n_dims, "the axis dim should be within the vector dimensions"
-    zs[axis_idx] = 1.
-    params = np.where(zs == 1., value, zs)
+    zs[axis_idx] = 1.0
+    params = np.where(zs == 1.0, value, zs)
     params[0] = x_value
     return list(params.astype(dtype))
 
@@ -174,22 +176,31 @@ def get_euler_xyz(q):
     qx, qy, qz, qw = 0, 1, 2, 3
     # roll (x-axis rotation)
     sinr_cosp = 2.0 * (q[:, qw] * q[:, qx] + q[:, qy] * q[:, qz])
-    cosr_cosp = q[:, qw] * q[:, qw] - q[:, qx] * \
-        q[:, qx] - q[:, qy] * q[:, qy] + q[:, qz] * q[:, qz]
+    cosr_cosp = (
+        q[:, qw] * q[:, qw]
+        - q[:, qx] * q[:, qx]
+        - q[:, qy] * q[:, qy]
+        + q[:, qz] * q[:, qz]
+    )
     roll = torch.atan2(sinr_cosp, cosr_cosp)
 
     # pitch (y-axis rotation)
     sinp = 2.0 * (q[:, qw] * q[:, qy] - q[:, qz] * q[:, qx])
-    pitch = torch.where(torch.abs(sinp) >= 1, copysign(
-        np.pi / 2.0, sinp), torch.asin(sinp))
+    pitch = torch.where(
+        torch.abs(sinp) >= 1, copysign(np.pi / 2.0, sinp), torch.asin(sinp)
+    )
 
     # yaw (z-axis rotation)
     siny_cosp = 2.0 * (q[:, qw] * q[:, qz] + q[:, qx] * q[:, qy])
-    cosy_cosp = q[:, qw] * q[:, qw] + q[:, qx] * \
-        q[:, qx] - q[:, qy] * q[:, qy] - q[:, qz] * q[:, qz]
+    cosy_cosp = (
+        q[:, qw] * q[:, qw]
+        + q[:, qx] * q[:, qx]
+        - q[:, qy] * q[:, qy]
+        - q[:, qz] * q[:, qz]
+    )
     yaw = torch.atan2(siny_cosp, cosy_cosp)
 
-    return roll % (2*np.pi), pitch % (2*np.pi), yaw % (2*np.pi)
+    return roll % (2 * np.pi), pitch % (2 * np.pi), yaw % (2 * np.pi)
 
 
 @torch.jit.script
@@ -229,7 +240,7 @@ def tensor_clamp(t, min_t, max_t):
 
 @torch.jit.script
 def scale(x, lower, upper):
-    return (0.5 * (x + 1.0) * (upper - lower) + lower)
+    return 0.5 * (x + 1.0) * (upper - lower) + lower
 
 
 @torch.jit.script
@@ -242,11 +253,11 @@ def unscale_np(x, lower, upper):
 
 
 def activation_facotry(act_name):
-    if act_name == 'relu':
+    if act_name == "relu":
         return nn.ReLU
-    elif act_name == 'tanh':
+    elif act_name == "tanh":
         return nn.Tanh
-    elif act_name == 'sigmoid':
+    elif act_name == "sigmoid":
         return nn.Sigmoid
     elif act_name == "elu":
         return nn.ELU
@@ -262,14 +273,13 @@ def activation_facotry(act_name):
         return nn.Identity
 
 
-
-
-def project_to_norm(x, norm=5, z_type = "sphere"):
+def project_to_norm(x, norm=5, z_type="sphere"):
     if z_type == "sphere":
         x = x / (torch.norm(x, dim=-1, keepdim=True) / norm + 1e-8)
     elif z_type == "uniform":
         x = torch.clamp(x, -norm, norm)
     return x
+
 
 @torch.jit.script
 def my_quat_rotate(q, v):
@@ -278,10 +288,13 @@ def my_quat_rotate(q, v):
     q_vec = q[:, :3]
     a = v * (2.0 * q_w**2 - 1.0).unsqueeze(-1)
     b = torch.cross(q_vec, v, dim=-1) * q_w.unsqueeze(-1) * 2.0
-    c = q_vec * \
-        torch.bmm(q_vec.view(shape[0], 1, 3), v.view(
-            shape[0], 3, 1)).squeeze(-1) * 2.0
+    c = (
+        q_vec
+        * torch.bmm(q_vec.view(shape[0], 1, 3), v.view(shape[0], 3, 1)).squeeze(-1)
+        * 2.0
+    )
     return a + b + c
+
 
 @torch.jit.script
 def quat_to_angle_axis(q):
@@ -474,4 +487,3 @@ def to_torch(tensor):
         return tensor
     else:
         return torch.from_numpy(tensor)
-
