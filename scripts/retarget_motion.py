@@ -460,7 +460,7 @@ def process_motion(key_names, key_name_to_pkls, cfg):
 
         data_dump = {
             "root_trans_offset": root_trans_offset_np,
-            "root_rot": root_rot_np,
+            "root_rot": root_rot_np[:, [3, 0, 1, 2]],
             "root_height": root_trans_offset_np[..., 2],
             "dof": dof_np,
             "dof_increment": dof_increment,
