@@ -48,10 +48,11 @@ motion_data = None
 motion_data_keys = []
 selected_motions = None
 playback_speed = 1.0
+motion_file_paths = {}  # 存储motion_key到原始文件路径的映射
 
 def key_callback(keycode):
     """键盘回调函数"""
-    global motion_id, time_step, paused, motion_data_keys, playback_speed
+    global motion_id, time_step, paused, motion_data_keys, playback_speed, motion_file_paths
     
     if chr(keycode) == " ":
         paused = not paused
@@ -73,6 +74,39 @@ def key_callback(keycode):
     elif chr(keycode) == "-":  # 减号键
         playback_speed = max(0.25, playback_speed - 0.25)
         print(f"播放速度: {playback_speed:.2f}x")
+    elif chr(keycode) == "S":  # S键保存当前运动
+        save_current_motion_to_good_list()
+
+def save_current_motion_to_good_list():
+    """保存当前播放的运动到good_motion.txt文件"""
+    global motion_id, motion_data_keys, motion_file_paths
+    
+    if not motion_data_keys or motion_id >= len(motion_data_keys):
+        print("错误: 没有有效的运动数据")
+        return
+    
+    current_motion_key = motion_data_keys[motion_id]
+    
+    # 获取原始文件路径
+    if current_motion_key in motion_file_paths:
+        original_file_path = motion_file_paths[current_motion_key]
+        good_motion_file = "good_motion.txt"
+        
+        # 检查是否已经存在
+        existing_entries = []
+        if os.path.exists(good_motion_file):
+            with open(good_motion_file, 'r', encoding='utf-8') as f:
+                existing_entries = [line.strip() for line in f.readlines()]
+        
+        if original_file_path not in existing_entries:
+            # 添加到文件
+            with open(good_motion_file, 'a', encoding='utf-8') as f:
+                f.write(f"{original_file_path}\n")
+            print(f"✓ 已保存到good_motion.txt: {original_file_path}")
+        else:
+            print(f"⚠ 已存在于good_motion.txt: {original_file_path}")
+    else:
+        print(f"警告: 无法找到原始文件路径 for {current_motion_key}")
 
 def load_motion_data(cfg, selected_npy_files=None):
     """加载运动数据"""
@@ -114,7 +148,9 @@ def load_motion_data(cfg, selected_npy_files=None):
 
 def load_motion_data_from_npy_files(npy_files):
     """从原始npy文件直接加载运动数据"""
+    global motion_file_paths
     motion_data = {}
+    motion_file_paths = {}  # 重置映射
     
     for npy_file in npy_files:
         if not os.path.exists(npy_file):
@@ -135,6 +171,9 @@ def load_motion_data_from_npy_files(npy_files):
             relative_path = npy_file.replace('/media/ray/Data/Retargeted_AMASS_for_robotics/g1/', '')
             motion_key = relative_path.replace('_poses_120_jpos.npy', '').replace('_poses_60_jpos.npy', '')
             motion_key = motion_key.replace('/', '_')
+            
+            # 保存原始文件路径映射
+            motion_file_paths[motion_key] = relative_path
             
             # 转换为运动数据格式
             motion_info = convert_npy_to_motion_format(data, motion_key)
@@ -266,7 +305,12 @@ def main(cfg: DictConfig) -> None:
     print("  E键: 下一个运动")
     print("  +键: 加速播放")
     print("  -键: 减速播放")
+    print("  S键: 保存当前运动到good_motion.txt")
     print(f"  当前播放速度: {playback_speed:.2f}x")
+    
+    # 如果使用了select，显示good_motion.txt相关信息
+    if select_file is not None:
+        print(f"\n📁 正在使用筛选模式，按S键可保存好的运动到 good_motion.txt")
     print()
     
     # 启动MuJoCo查看器
